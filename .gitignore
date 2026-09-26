@@ -1,0 +1,46 @@
+# Secrets. Nothing in this group may ever be committed.
+#
+# A credential that reaches a git history is compromised even after deletion,
+# because the object stays reachable in reflogs, forks and clones. The only
+# remedy is rotation, so the cheap defence is never committing one.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/testdata/**/*.key
+secrets/
+keystore/
+
+# Go
+/orchestrator/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Foundry (M2 onward)
+/contracts/out/
+/contracts/cache/
+/contracts/broadcast/
+# contracts/lib is deliberately NOT ignored.
+#
+# Foundry dependencies live there as git submodules, pinned to an exact commit. That
+# pinning is the point: the contract tests are what demonstrate the Solidity Merkle and
+# ballot encodings agree with the Go ones, so a reviewer has to be able to clone and run
+# them. Ignoring lib/ left a fresh clone unable to compile, which made the strongest
+# evidence in the repository unreachable to anyone but us.
+#
+# A submodule is also more checkable than a vendored copy: the commit hash says the
+# dependency is exactly upstream, with nothing quietly edited.
+
+# Node / React (M8 onward)
+node_modules/
+/web/dist/
+/web/.vite/
+
+# Local tooling
+.DS_Store
+Thumbs.db
+*.log
+/tmp/

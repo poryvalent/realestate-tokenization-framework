@@ -1,0 +1,58 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+
+solc = "0.8.28"
+evm_version = "cancun"
+
+# Optimised for Sepolia deployment. 200 runs favours deployment size over repeated
+# call cost, which suits contracts whose functions are called a few hundred times
+# across a scheme's life rather than millions.
+optimizer = true
+optimizer_runs = 200
+
+# The IR pipeline is enabled for size, not speed.
+#
+# AcreSyncScheme carries the lifecycle, the register, chunked settlement and the whole
+# distribution attestation, and the legacy pipeline compiles it to within a few hundred
+# bytes of the EIP-170 limit. That is not a margin worth deploying against: the contracts
+# are immutable with no proxy, so discovering the ceiling later means redeploying the
+# scheme rather than patching it. The IR pipeline also removes the stack-depth failures
+# that the legacy one hits on functions with many parameters.
+#
+# The cost is noticeably slower compilation, which is a fair trade for headroom.
+via_ir = true
+
+# The contracts are immutable by design, with no proxy, so there is no upgrade path
+# for a bug. Warnings are therefore treated as defects.
+deny = "warnings"
+
+# Tests read golden vectors produced by the Go implementation, which is how the
+# Solidity and Go hash constructions are held to the same specification. Read-only
+# access to that one directory.
+fs_permissions = [{ access = "read", path = "./test/testdata" }]
+
+[profile.default.fuzz]
+runs = 512
+max_test_rejects = 100000
+
+[profile.default.invariant]
+runs = 256
+depth = 32
+fail_on_revert = false
+
+# A deeper sweep for pre-deployment verification: forge test --profile deep
+[profile.deep.fuzz]
+runs = 10000
+
+[profile.deep.invariant]
+runs = 1000
+depth = 64
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

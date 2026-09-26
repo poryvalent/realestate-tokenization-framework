@@ -1,0 +1,106 @@
+[
+  {
+    "name": "advance_clock",
+    "action": "ADVANCE_CLOCK",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "",
+    "payload": {
+      "to": "2026-10-01T00:00:00Z"
+    },
+    "key": "0xdc3354c11a974fa83f82372c3cef31ec0d4097e0bf3605bc5753bced43b42e62"
+  },
+  {
+    "name": "empty_payload",
+    "action": "PAUSE",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "",
+    "payload": {},
+    "key": "0x84848090251c8b27b4b430459b45dc3b20ff1c83822a99ade8ea8aeebc26075c"
+  },
+  {
+    "name": "null_payload",
+    "action": "UNPAUSE",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "",
+    "payload": null,
+    "key": "0x3790b49da425ff09c9e0ec899f5790d36e9d2230f18e776b53f1b7e3a64ef94a"
+  },
+  {
+    "name": "inject_rent",
+    "action": "INJECT_RENT",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "11111111-2222-3333-4444-555555555555",
+    "payload": {
+      "leaseId": "99999999-8888-7777-6666-555555555555",
+      "receivedAt": "2026-09-01T00:00:00Z",
+      "receivedAmountPaise": 2500000000
+    },
+    "key": "0x5c78906b3ef08be76fcbc4f4181dc985ced779c47ef1842487ba6dd4b51cf944"
+  },
+  {
+    "name": "anchor_period",
+    "action": "ANCHOR_PERIOD",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "11111111-2222-3333-4444-555555555555",
+    "payload": {
+      "periodSeq": 1,
+      "recordDate": "2026-09-30",
+      "ndcfPaise": 30000000000,
+      "distributedPaise": 28500000000,
+      "distributionBps": 9500,
+      "statementHash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    },
+    "key": "0x7867ba58e0b8e7cd22c55d9e3a68720bb1aff951083fd4162f16de973316182c"
+  },
+  {
+    "name": "commit_seed",
+    "action": "COMMIT_SEED",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "99999999-8888-7777-6666-555555555555",
+    "payload": {
+      "commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "targetBlock": 8123456
+    },
+    "key": "0xb822508764f1cbc7e91dd21061ffa861bf812e02d8cd788a5ac423407186b6fc"
+  },
+  {
+    "name": "settle_batch",
+    "action": "SETTLE_BATCH",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "99999999-8888-7777-6666-555555555555",
+    "payload": {
+      "cursorFrom": 0,
+      "holders": [
+        "0x000000000000000000000000000000000000dead",
+        "0x000000000000000000000000000000000000beef"
+      ],
+      "units": [
+        3,
+        1
+      ]
+    },
+    "key": "0x980b1de819669750daff26bee6374b6f6350d5f971a309c8dfc53f048fee9dfe"
+  },
+  {
+    "name": "finalise_settlement",
+    "action": "FINALISE_SETTLEMENT",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "99999999-8888-7777-6666-555555555555",
+    "payload": {
+      "expectedHolders": 200,
+      "expectedUnits": 475
+    },
+    "key": "0x06caa5824772fa3c701da98ab9ac9ab4c81889935a85ba68c25f3553b714a3c2"
+  },
+  {
+    "name": "reverse_period",
+    "action": "REVERSE_PERIOD",
+    "schemeId": "6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "scopeId": "11111111-2222-3333-4444-555555555555",
+    "payload": {
+      "reason": "DUPLICATE_INJECTION",
+      "narrativeHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "key": "0xc1c9d7a065e4f6a743da00e770ea094dd944f9636fb7dbfe9b888f42960bb6a2"
+  }
+]

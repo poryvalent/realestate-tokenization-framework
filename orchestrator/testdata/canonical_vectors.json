@@ -1,0 +1,118 @@
+[
+  {
+    "name": "empty_object",
+    "input": {},
+    "expected": "{}"
+  },
+  {
+    "name": "empty_array",
+    "input": [],
+    "expected": "[]"
+  },
+  {
+    "name": "key_order",
+    "input": {
+      "zeta": 1,
+      "Alpha": 2,
+      "beta": 3,
+      "": 4
+    },
+    "expected": "{\"\":4,\"Alpha\":2,\"beta\":3,\"zeta\":1}"
+  },
+  {
+    "name": "nested",
+    "input": {
+      "b": {
+        "d": 1,
+        "c": 2
+      },
+      "a": [
+        3,
+        2,
+        1
+      ]
+    },
+    "expected": "{\"a\":[3,2,1],\"b\":{\"c\":2,\"d\":1}}"
+  },
+  {
+    "name": "large_integers",
+    "input": {
+      "max_i64": 9223372036854775807,
+      "min_i64": -9223372036854775808,
+      "above_2p53": 9007199254740993
+    },
+    "expected": "{\"above_2p53\":9007199254740993,\"max_i64\":9223372036854775807,\"min_i64\":-9223372036854775808}"
+  },
+  {
+    "name": "paise_amounts",
+    "input": {
+      "ndcfPaise": 30000000000,
+      "distributedPaise": 28500000000,
+      "distributionBps": 9500
+    },
+    "expected": "{\"distributedPaise\":28500000000,\"distributionBps\":9500,\"ndcfPaise\":30000000000}"
+  },
+  {
+    "name": "string_escapes",
+    "input": {
+      "quote": "a\"b",
+      "backslash": "a\\b",
+      "tab": "a\tb",
+      "ctrl": "a\u0001b",
+      "solidus": "a/b",
+      "html": "a\u003cb\u003e\u0026c"
+    },
+    "expected": "{\"backslash\":\"a\\\\b\",\"ctrl\":\"a\\u0001b\",\"html\":\"a\u003cb\u003e\u0026c\",\"quote\":\"a\\\"b\",\"solidus\":\"a/b\",\"tab\":\"a\\tb\"}"
+  },
+  {
+    "name": "unicode",
+    "input": {
+      "rupee": "₹",
+      "naive": "naïve",
+      "emoji": "\ud83d\ude00"
+    },
+    "expected": "{\"emoji\":\"😀\",\"naive\":\"naïve\",\"rupee\":\"₹\"}"
+  },
+  {
+    "name": "literals",
+    "input": {
+      "t": true,
+      "f": false,
+      "n": null
+    },
+    "expected": "{\"f\":false,\"n\":null,\"t\":true}"
+  },
+  {
+    "name": "whitespace_stripped",
+    "input": {
+      "a": 1,
+      "b": [
+        1,
+        2
+      ]
+    },
+    "expected": "{\"a\":1,\"b\":[1,2]}"
+  },
+  {
+    "name": "negative_zero",
+    "input": {
+      "v": -0
+    },
+    "expected": "{\"v\":0}"
+  },
+  {
+    "name": "deep_nest",
+    "input": {
+      "a": {
+        "b": {
+          "c": {
+            "d": {
+              "e": 1
+            }
+          }
+        }
+      }
+    },
+    "expected": "{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":1}}}}}"
+  }
+]
