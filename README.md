@@ -22,12 +22,13 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M4 | Transactional outbox, chain client, relayer, Anvil chaos tests | Complete |
 | M5 | IPFS pinning, NDCF, snapshots, entitlements, payouts | Complete |
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
-| M7 | Divergence detection and reversal | Not started |
+| M7 | Divergence resolution, period reversal, carry-forward adjustments | Complete |
 | — | HTTP API | Contract defined, handlers not written |
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**809 Go tests, 131 Solidity tests, `go vet` clean.**
+**880 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
+issuance, distribution and correction are all built and tested end to end against Postgres.
 
 ## Deployed on Sepolia (chain 11155111)
 
@@ -89,7 +90,7 @@ contracts/      Solidity sources, tests, deploy script (Foundry)
 db/migrations/  12 forward-only SQL migrations
 docs/api/       HTTP API contract (OpenAPI) and the frontend guide
 docs/           Runbooks
-orchestrator/   Go services: 27 internal packages plus cmd tools
+orchestrator/   Go services: 28 internal packages plus cmd tools
 tools/          WSL wrappers for Foundry
 ```
 
@@ -160,7 +161,7 @@ go test ./... -count=1
 ```
 
 Without a database the suite still passes, but 26 tests skip rather than fail, so check the
-count: **809 passing, 0 skipped** is a complete run.
+count: **880 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env
