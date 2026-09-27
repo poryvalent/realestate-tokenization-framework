@@ -124,8 +124,8 @@ var transitions = map[Status][]Status{
 	StatusEntitlementsAnchored: {StatusPayoutInstructed, StatusReversed},
 
 	// No reversal edge from here on. Both the contract and a trigger refuse it: fiat has settled.
-	StatusPayoutInstructed:   {StatusPayoutsConfirmed},
-	StatusPayoutsConfirmed:   {StatusClosed},
+	StatusPayoutInstructed: {StatusPayoutsConfirmed},
+	StatusPayoutsConfirmed: {StatusClosed},
 
 	StatusClosed:   {},
 	StatusReversed: {},

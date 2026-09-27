@@ -294,6 +294,16 @@ func (f *fixture) teardown(ctx context.Context) {
 			SELECT e.id FROM entitlements e
 			JOIN distribution_periods p ON p.id = e.distribution_period_id
 			WHERE p.scheme_id = $1)`,
+		// Before distribution_periods, which it references twice.
+		//
+		// Worth noting why this cannot be left out: teardown runs with session_replication_role set to
+		// replica, so foreign keys are not enforced and omitting this does not fail loudly. The periods
+		// get deleted anyway and the adjustment is silently orphaned, pointing at rows that no longer
+		// exist. That was the observed behaviour before this line existed.
+		`DELETE FROM carry_forward_adjustments WHERE source_period_id IN (
+			SELECT id FROM distribution_periods WHERE scheme_id = $1)
+		   OR target_period_id IN (
+			SELECT id FROM distribution_periods WHERE scheme_id = $1)`,
 		`DELETE FROM entitlements WHERE distribution_period_id IN (
 			SELECT id FROM distribution_periods WHERE scheme_id = $1)`,
 		`DELETE FROM register_snapshot_lines WHERE snapshot_id IN (

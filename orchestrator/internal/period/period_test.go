@@ -182,8 +182,16 @@ func TestReversalUnreachableAfterSettlement(t *testing.T) {
 		}
 		// The message has to name the alternative, or an operator hunting a way to force it has
 		// nowhere to go.
-		if !strings.Contains(err.Error(), "carry-forward") && !errors.Is(err, ErrIllegalTransition) {
+		//
+		// This assertion used to accept ErrIllegalTransition as an alternative, and that tolerance hid a
+		// real gap: the graph rejects these two states before the fiat check runs, so the helpful
+		// message never fired and the test passed on the unhelpful one. Requiring the message outright
+		// is the only version that checks what the comment above claims.
+		if !strings.Contains(err.Error(), "carry-forward") {
 			t.Errorf("the refusal should point at a carry-forward adjustment, got: %v", err)
+		}
+		if !errors.Is(err, ErrFiatSettled) {
+			t.Errorf("the refusal should be about fiat having settled, got: %v", err)
 		}
 	}
 

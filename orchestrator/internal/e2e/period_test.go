@@ -30,8 +30,8 @@ type run struct {
 	periodSeq uint32
 	status    period.Status
 
-	plan        ndcf.Plan
-	ndcfItems   []ndcf.LineItem
+	plan         ndcf.Plan
+	ndcfItems    []ndcf.LineItem
 	statementPin *ipfs.Pin
 
 	snap        *snapshot.Snapshot

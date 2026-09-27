@@ -120,6 +120,22 @@ type Evidence struct {
 // and whether its register adds up. Conflating them would make "the move is allowed" and "the work is
 // done" indistinguishable.
 func Guard(from, to Status, ev Evidence) error {
+	// The fiat boundary is explained before the transition graph is consulted.
+	//
+	// Both refuse the same thing, so the order looks arbitrary. It is not. No status with settled fiat
+	// has REVERSED as a legal successor, which means the graph rejects it first and the refusal an
+	// operator sees is "illegal status transition" — true, and useless at the one moment they need to be
+	// told that the remedy is a carry-forward adjustment.
+	//
+	// Checking here makes that message reachable. Before this, the ErrFiatSettled branch below could
+	// never fire for PAYOUTS_CONFIRMED or CLOSED, so the most carefully worded error in this file was
+	// dead code for exactly the two states it was written for.
+	if to == StatusReversed && from.FiatHasSettled() {
+		return fmt.Errorf("%w: cannot reverse from %s, because money has already left the escrow. "+
+			"Unwinding the period now would assert that payments which happened did not; record a "+
+			"carry-forward adjustment against a later period instead", ErrFiatSettled, from)
+	}
+
 	if err := CheckTransition(from, to); err != nil {
 		return err
 	}
