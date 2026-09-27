@@ -52,5 +52,16 @@ func (s *Server) writeRoutes(mux *http.ServeMux) {
 		if s.deps.Publisher != nil {
 			manager("POST /v1/admin/offers/{offerId}/ballot/draw", s.handleDrawBallot)
 		}
+
+		// Settlement replays the draw to rebuild its plan, which needs the same secret. Opening it moves the
+		// money, so it also needs the bank.
+		mux.HandleFunc("GET /v1/admin/offers/{offerId}/settlement", op()(s.handleGetSettlement))
+		if s.deps.ASBA != nil {
+			manager("POST /v1/admin/offers/{offerId}/settlement/begin", s.handleBeginSettlement)
+		}
+		manager("POST /v1/admin/offers/{offerId}/settlement/batches", s.handleSubmitSettlementBatch)
+		// Permissionless on-chain, so any operator role may ask for it.
+		mux.HandleFunc("POST /v1/admin/offers/{offerId}/settlement/finalise",
+			op(rolesFinalise...)(s.write("POST /v1/admin/offers/{offerId}/settlement/finalise", s.handleFinaliseSettlement)))
 	}
 }

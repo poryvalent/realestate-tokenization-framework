@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -200,7 +201,19 @@ func seedBidder(t *testing.T, h *writeHarness, schemeID string) (investorID, dem
 		investorID, schemeID, anchor[:]).Scan(&id); err != nil {
 		t.Fatalf("seeding an investor anchor: %v", err)
 	}
+	seedWallet(t, h, investorID)
 	return investorID, dematID, bankID
+}
+
+// seedWallet gives an investor an active wallet, the register address settlement credits.
+func seedWallet(t *testing.T, h *writeHarness, investorID string) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte("wallet:" + investorID))
+	addr := "0x" + hex.EncodeToString(sum[:20])
+	if _, err := h.tx.Exec(h.ctx, `INSERT INTO wallets (investor_id, address) VALUES ($1, $2)`, investorID, addr); err != nil {
+		t.Fatalf("seeding a wallet: %v", err)
+	}
+	return addr
 }
 
 // count runs a count query in the harness transaction.

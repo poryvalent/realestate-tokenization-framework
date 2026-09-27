@@ -53,8 +53,9 @@ func (h *writeHarness) runID(t *testing.T, offerID string) string {
 	return id
 }
 
-// confirm marks the newest outbox row for fn against the entity as confirmed in the given block, as the
-// relayer's sweep would once it saw the receipt at depth.
+// confirm marks the queued outbox row for fn against the entity as confirmed in the given block, as the
+// relayer's sweep would once it saw the receipt at depth. Only a queued row qualifies: every request in the
+// harness shares one outer transaction, so created_at cannot tell two rows apart.
 func (h *writeHarness) confirm(t *testing.T, entityID, fn string, block int64) {
 	t.Helper()
 	tx := sha256.Sum256([]byte(apiUniq("tx")))
@@ -64,7 +65,7 @@ func (h *writeHarness) confirm(t *testing.T, entityID, fn string, block int64) {
 		       submitted_at = now(), attempt_count = 1,
 		       nonce = (SELECT coalesce(max(nonce), -1) + 1 FROM chain_outbox WHERE scheme_id = o.scheme_id)
 		 WHERE id = (SELECT id FROM chain_outbox
-		              WHERE related_entity_id = $1 AND function_name = $2
+		              WHERE related_entity_id = $1 AND function_name = $2 AND status = 'QUEUED'
 		              ORDER BY created_at DESC, id DESC LIMIT 1)`,
 		entityID, fn, "0x"+hex.EncodeToString(tx[:]), block)
 	if err != nil {

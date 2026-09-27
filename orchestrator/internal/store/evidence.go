@@ -95,6 +95,10 @@ type BallotRun struct {
 	ResultRoot      merkle.Hash
 	ResultCID       merkle.Hash
 	AlgoVersion     int32
+
+	// ExecutedAt is when the draw ran. The allotment file records it, so a replay of the draw needs it to
+	// reproduce the pinned bytes. Nil until drawn.
+	ExecutedAt *time.Time
 }
 
 // OfferEvidence is an offer with everything its guards need.
@@ -279,12 +283,12 @@ func ballotRunFor(ctx context.Context, q Querier, offerID string) (*BallotRun, e
 		SELECT id, status::text, bidbook_merkle_root, bidbook_cid_digest, bidbook_snapshot_at,
 		       bid_leaf_count, total_units_bid, distinct_bidders, oversubscription_num, oversubscription_den,
 		       seed_commitment, target_block, attempt, seed_plaintext, target_block_hash, final_seed,
-		       commitment_anchored_tx, result_merkle_root, result_cid_digest, algo_version
+		       commitment_anchored_tx, result_merkle_root, result_cid_digest, algo_version, executed_at
 		  FROM ballot_runs WHERE offer_id = $1`, offerID).Scan(
 		&r.ID, &r.Status, &root, &cid, &r.SnapshotAt,
 		&r.LeafCount, &r.TotalUnitsBid, &r.DistinctBidders, &r.OversubNum, &r.OversubDen,
 		&commit, &r.TargetBlock, &r.Attempt, &plain, &hash, &seed,
-		&commitTx, &resRoot, &resCID, &r.AlgoVersion)
+		&commitTx, &resRoot, &resCID, &r.AlgoVersion, &r.ExecutedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -303,6 +307,10 @@ func ballotRunFor(ctx context.Context, q Querier, offerID string) (*BallotRun, e
 		r.CommitmentTx = *commitTx
 	}
 	r.SnapshotAt = r.SnapshotAt.UTC()
+	if r.ExecutedAt != nil {
+		t := r.ExecutedAt.UTC()
+		r.ExecutedAt = &t
+	}
 	return &r, nil
 }
 
