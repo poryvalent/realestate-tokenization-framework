@@ -67,6 +67,12 @@ type Anchor struct {
 	Payload      []byte
 }
 
+// IsConfirmed reports whether the row is confirmed to depth. Safe on nil, which Latest returns when the call
+// was never queued; the promoted AnchorRef method would dereference the nil Anchor to reach it.
+func (a *Anchor) IsConfirmed() bool {
+	return a != nil && a.AnchorRef.IsConfirmed()
+}
+
 // BallotRun is the ballot_runs row.
 type BallotRun struct {
 	ID              string
@@ -231,17 +237,28 @@ func bookState(ctx context.Context, q Querier, offerID string) (offer.BookState,
 		b                         offer.BookState
 		unitsBid, distinctBidders int64
 	)
+	// A bid is in the book if its status says so, or if the draw gave it an allocation. The second clause
+	// matters for a technically rejected bid: it was in the book the root commits to, and dropping it from the
+	// count after the draw would make every later guard compare against a smaller book than the anchored one.
+	// The funds check counts DEBITED and UNBLOCKED as well as BLOCKED, because after settlement a block has
+	// done its job; what matters to the book is that it was confirmed when the book was fixed.
 	err := q.QueryRow(ctx, `
+		WITH book AS (
+			SELECT b.*, a.block_status,
+			       (b.status::text = ANY($2)
+			        OR EXISTS (SELECT 1 FROM allocations al WHERE al.bid_id = b.id)) AS in_book
+			  FROM bids b
+			  LEFT JOIN asba_blocks a ON a.bid_id = b.id
+			 WHERE b.offer_id = $1
+		)
 		SELECT
 			count(*),
-			count(*) FILTER (WHERE b.status::text = ANY($2)),
-			count(*) FILTER (WHERE b.status::text = ANY($2) AND a.block_status::text IN ('BLOCKED', 'DEBITED')),
-			coalesce(sum(b.units_bid) FILTER (WHERE b.status::text = ANY($2)), 0),
-			count(DISTINCT b.investor_id) FILTER (WHERE b.status::text = ANY($2)),
-			count(*) FILTER (WHERE b.status::text = ANY($3))
-		FROM bids b
-		LEFT JOIN asba_blocks a ON a.bid_id = b.id
-		WHERE b.offer_id = $1`,
+			count(*) FILTER (WHERE in_book),
+			count(*) FILTER (WHERE in_book AND block_status::text IN ('BLOCKED', 'DEBITED', 'UNBLOCKED')),
+			coalesce(sum(units_bid) FILTER (WHERE in_book), 0),
+			count(DISTINCT investor_id) FILTER (WHERE in_book),
+			count(*) FILTER (WHERE status::text = ANY($3))
+		FROM book`,
 		offerID, inBookStatuses, pendingStatuses).Scan(
 		&b.BidCount, &b.InBookCount, &b.FundsBlockedCount, &unitsBid, &distinctBidders, &b.PendingValidation)
 	if err != nil {

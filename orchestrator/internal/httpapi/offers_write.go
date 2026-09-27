@@ -87,8 +87,8 @@ func (s *Server) evidenceWithNow(ctx context.Context, q store.Querier, offerID s
 //
 // frozenAt is part of the document, so a rebuild that should reproduce an anchored root must pass the time the
 // original was frozen at, which the ballot run records.
-func frozenBook(ctx context.Context, q store.Querier, oe *store.OfferEvidence, frozenAt time.Time) (*bidbook.Book, error) {
-	entries, err := store.BookEntries(ctx, q, oe.Offer.ID)
+func frozenBook(ctx context.Context, q store.Querier, oe *store.OfferEvidence, frozenAt time.Time, asFrozen bool) (*bidbook.Book, error) {
+	entries, err := store.BookEntries(ctx, q, oe.Offer.ID, asFrozen)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func applyFeasibility(ctx context.Context, q store.Querier, oe *store.OfferEvide
 		oe.Evidence.Feasible = true
 		return nil
 	}
-	book, err := frozenBook(ctx, q, oe, oe.Evidence.Now)
+	book, err := frozenBook(ctx, q, oe, oe.Evidence.Now, false)
 	if err != nil {
 		if errors.Is(err, bidbook.ErrEmptyBook) {
 			oe.Evidence.Feasible, oe.Evidence.FeasibilityReason = false, "no bid survived validation"

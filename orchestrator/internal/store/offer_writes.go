@@ -70,7 +70,16 @@ func AdmitFundedBids(ctx context.Context, w Writer, offerID string) (int64, erro
 //
 // Read back from the rows rather than reused from anything held in memory, so the root is computed over what
 // was actually persisted, including anything a column type quietly changed on the way in.
-func BookEntries(ctx context.Context, q Querier, offerID string) ([]bidbook.Entry, error) {
+//
+// # asFrozen
+//
+// bidbook.Freeze insists every block is BLOCKED, which is right at the moment of freezing. After settlement
+// the same blocks are DEBITED or UNBLOCKED, and the draw and the settlement plan both have to be rebuilt from
+// the book as it stood when it was frozen. With asFrozen set, a block that was blocked is reported as it was at
+// that moment: BLOCKED, for the amount it blocked, at the time it blocked. That is a reconstruction of recorded
+// history, not an assumption: blocked_amount_paise and blocked_at are written once and never changed, and a
+// rebuild whose root differs from the anchored one is refused by the caller.
+func BookEntries(ctx context.Context, q Querier, offerID string, asFrozen bool) ([]bidbook.Entry, error) {
 	rows, err := q.Query(ctx, `
 		SELECT b.id, b.investor_id, b.bid_reference, b.investor_anchor_hash,
 		       b.units_bid, b.price_per_unit_paise,
@@ -78,7 +87,8 @@ func BookEntries(ctx context.Context, q Querier, offerID string) ([]bidbook.Entr
 		       a.requested_at, a.blocked_at, coalesce(a.bank_ref, '')
 		  FROM bids b
 		  JOIN asba_blocks a ON a.bid_id = b.id
-		 WHERE b.offer_id = $1 AND b.status::text = ANY($2)
+		 WHERE b.offer_id = $1
+		   AND (b.status::text = ANY($2) OR EXISTS (SELECT 1 FROM allocations al WHERE al.bid_id = b.id))
 		 ORDER BY b.bid_reference`, offerID, inBookStatuses)
 	if err != nil {
 		return nil, err
@@ -102,6 +112,10 @@ func BookEntries(ctx context.Context, q Querier, offerID string) ([]bidbook.Entr
 
 		var anchor merkle.Hash
 		copy(anchor[:], anchorBytes)
+
+		if asFrozen && blockedAt != nil && blocked > 0 {
+			status = string(asba.StatusBlocked)
+		}
 
 		out = append(out, bidbook.Entry{
 			BidID:             bidID,

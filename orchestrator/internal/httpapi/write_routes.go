@@ -30,4 +30,27 @@ func (s *Server) writeRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /v1/offers/{offerId}/bids",
 			s.requireInvestor(s.write("POST /v1/offers/{offerId}/bids", s.handlePlaceBid)))
 	}
+
+	manager := func(route string, fn writeFunc) {
+		mux.HandleFunc(route, op(rolesRunOffer...)(s.write(route, fn)))
+	}
+
+	// Freezing pins the book, so it needs somewhere to pin it.
+	if s.deps.Publisher != nil {
+		manager("POST /v1/admin/offers/{offerId}/book/freeze", s.handleFreezeBook)
+	}
+
+	// The ceremony derives its secret from the pepper. Without one there is no secret to commit to, and a
+	// ceremony started under one pepper can only be finished under the same one.
+	if len(s.deps.SeedPepper) > 0 {
+		manager("POST /v1/admin/offers/{offerId}/ballot/commit", s.handleCommitSeed)
+		// Reveal and recommit are judged against the chain head, and reveal reads the target block's hash.
+		if s.deps.Chain != nil {
+			manager("POST /v1/admin/offers/{offerId}/ballot/reveal", s.handleRevealSeed)
+			manager("POST /v1/admin/offers/{offerId}/ballot/recommit", s.handleRecommitSeed)
+		}
+		if s.deps.Publisher != nil {
+			manager("POST /v1/admin/offers/{offerId}/ballot/draw", s.handleDrawBallot)
+		}
+	}
 }

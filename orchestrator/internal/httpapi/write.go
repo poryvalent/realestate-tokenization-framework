@@ -61,6 +61,9 @@ type ChainReader interface {
 // Publisher pins a document. *ipfs.Publisher satisfies it.
 type Publisher interface {
 	Publish(ctx context.Context, docType ipfsguard.DocType, raw []byte) (*ipfs.Pin, error)
+	// ProviderName is recorded on every pin, so a document pinned to the mock can never be mistaken for one
+	// pinned to a public gateway.
+	ProviderName() string
 }
 
 // ASBAProvider is the bank side of a funds block. asba.Provider satisfies it.

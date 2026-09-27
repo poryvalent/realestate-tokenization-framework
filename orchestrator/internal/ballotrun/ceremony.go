@@ -19,6 +19,7 @@ package ballotrun
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -360,4 +361,44 @@ func (c *Ceremony) CanPersistPlaintext() error {
 		return errors.New("ballotrun: the seed plaintext cannot be stored before a target block is set")
 	}
 	return nil
+}
+
+// --- call payloads -------------------------------------------------------------------------------------
+//
+// The arguments each ceremony call carries, for the relayer. Every call's trailing idempotencyKey is not in
+// the payload: it is the outbox entry's own key, appended when the transaction is built, so the key the
+// contract records and the key the database holds cannot differ.
+
+// CommitPayload renders commitSeed(commitment, idempotencyKey).
+//
+// Carries the commitment only. There is no block number to pass, because the contract chooses the target
+// block itself; a caller who could name the block would name one whose hash it had reason to prefer.
+func (c *Ceremony) CommitPayload() ([]byte, error) {
+	if c.Commitment.IsZero() {
+		return nil, errors.New("ballotrun: there is no commitment to send")
+	}
+	return json.Marshal(map[string]any{"commitment": c.Commitment[:]})
+}
+
+// RevealPayload renders revealSeed(secret, idempotencyKey).
+//
+// Refused unless the plaintext may already be persisted. The payload is written to chain_outbox, which is as
+// durable as ballot_runs, so building it early would put the secret on disk before the commitment is anchored,
+// exactly the ordering the reveal trigger exists to prevent.
+func (c *Ceremony) RevealPayload(secret merkle.Hash) ([]byte, error) {
+	if err := c.CanPersistPlaintext(); err != nil {
+		return nil, err
+	}
+	if err := c.VerifySecret(secret); err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{"secret": secret[:]})
+}
+
+// RecommitPayload renders recommitSeed(idempotencyKey).
+//
+// Empty by construction. The commitment is immutable and reused, and the contract picks the new target block,
+// so there is nothing for the caller to say beyond asking for a fresh window.
+func (c *Ceremony) RecommitPayload() ([]byte, error) {
+	return json.Marshal(map[string]any{})
 }
