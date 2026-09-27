@@ -23,13 +23,37 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M5 | IPFS pinning, NDCF, snapshots, entitlements, payouts | Complete |
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
 | M7 | Divergence resolution, period reversal, carry-forward adjustments | Complete |
-| — | HTTP API | Public and investor read surfaces, session exchange, auth and mutation admission live; investor writes and the operator surface pending |
+| — | HTTP API | All read surfaces live (public, investor, chain outbox) with session exchange, auth and mutation admission. The 12 mutations are not written: see below |
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**1333 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
+**1362 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
 issuance, distribution and correction are all built and tested end to end against Postgres.
-The HTTP API serves the public verification surface from that domain over real Postgres.
+
+### What the HTTP API does and does not serve
+
+Every **read** in the published contract is live against real Postgres: the public verification
+surface, an investor's own records behind a session token, and the chain outbox for operators.
+
+The **12 mutations are not written**, and that is a boundary rather than a to-do list:
+
+- Each one drives a domain ceremony that must reach the chain through the transactional outbox, so a
+  handler that merely wrote a row would look successful while anchoring nothing.
+- HTTP response replay has no storage yet. The derived idempotency key already makes a retry a no-op
+  in the domain, so a retry is safe; what is missing is returning the *same response* to the second
+  attempt rather than re-deriving it.
+
+Two published reads are also deliberately absent, because a wrong answer would be worse than none:
+
+- `GET /admin/offers/{id}/readiness` reports `canAdvance` and a list of blockers from `offer.Guard`,
+  which needs an `offer.Evidence` assembled from the offer, its bids, their funds blocks, the ballot
+  run, the IPFS pins, the allocation rows and the settlement cursor. Gathered from fewer sources than
+  that, it returns a confident `canAdvance: true` on evidence nobody checked, and an operator would
+  act on it during a commit–reveal ceremony.
+- `GET /admin/periods/{id}/reconciliation` cannot be served as specified. `reconciliation_runs` is
+  keyed by `scheme_id` and `run_at` with no period reference, so linking a run to a period would be a
+  guess — and that guess sets `blocksPayout`, the flag the database uses to refuse paying against a
+  register known to be wrong. The fix belongs in the schema or the contract, not in a handler.
 
 ## Deployed on Sepolia (chain 11155111)
 
@@ -162,7 +186,7 @@ go test ./... -count=1
 ```
 
 Without a database the suite still passes, but tests that need one skip rather than fail, so check
-the count: **1333 passing, 0 skipped** is a complete run.
+the count: **1362 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env

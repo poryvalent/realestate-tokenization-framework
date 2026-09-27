@@ -48,6 +48,9 @@ type Deps struct {
 
 	// Me reads an authenticated investor's own records.
 	Me MeReader
+
+	// Outbox reads the chain queue for the operator console.
+	Outbox OutboxReader
 }
 
 // DefaultSessionTTL is how long a session lasts when none is configured.
@@ -157,6 +160,13 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /v1/me/entitlements", s.requireInvestor(s.handleListMyEntitlements))
 		mux.HandleFunc("GET /v1/me/payouts", s.requireInvestor(s.handleListMyPayouts))
 		mux.HandleFunc("GET /v1/me/bids", s.requireInvestor(s.handleListMyBids))
+	}
+
+	// The operator surface. Any operator role: the chain queue is the operator's own infrastructure, it holds no
+	// investor identity, and a trustee asking why an approval has not landed needs the same view as the manager
+	// who queued it.
+	if s.signer != nil && s.deps.Outbox != nil {
+		mux.HandleFunc("GET /v1/admin/outbox", s.requireOperator()(s.handleListOutbox))
 	}
 
 	// An explicit catch-all, so an unknown path produces the contract's error envelope rather than

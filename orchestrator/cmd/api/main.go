@@ -63,6 +63,7 @@ func run() error {
 		SessionTTL:    cfg.API.SessionTTL,
 		Investors:     httpapi.InvestorsByWallet{Wallets: store.NewInvestors(pool)},
 		Me:            store.NewMe(pool),
+		Outbox:        store.NewOutbox(pool),
 	}
 
 	// The upstream verifier is attached only when a JWKS is configured. Without it POST /auth/session is not

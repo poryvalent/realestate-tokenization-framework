@@ -220,6 +220,13 @@ func (v *validator) checkType(path string, value any, types []string) bool {
 		} else {
 			actual = "integer"
 		}
+	case float64:
+		// A float64 means the document was decoded with plain json.Unmarshal rather than decodeJSON, which
+		// silently discards the distinction this validator exists to catch: every JSON number becomes a
+		// float64, so an amount emitted as 1.0e+11 would validate as a clean integer. Reported loudly rather
+		// than accommodated, because accommodating it would make the check pass while checking less.
+		v.fail(path, "was decoded as a float64; validate a body read with decodeJSON so numeric precision survives")
+		return false
 	default:
 		actual = fmt.Sprintf("%T", value)
 	}
@@ -849,6 +856,9 @@ func TestConformanceCoversEveryWiredPublicEndpoint(t *testing.T) {
 		"GET /v1/me/entitlements",
 		"GET /v1/me/payouts",
 		"GET /v1/me/bids",
+
+		// The operator surface.
+		"GET /v1/admin/outbox",
 	}
 
 	// Each one must be described by the contract too, otherwise the server is serving something unpublished.
