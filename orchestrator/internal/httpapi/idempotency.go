@@ -45,10 +45,13 @@ import (
 //
 // A minimum because a single character is not a key and accepting it would make the requirement decorative. A
 // maximum because the value is logged and indexed, and an unbounded header is a cheap way to inflate both.
+// The bounds are the contract's: minLength 16, maxLength 128. They were 8 and 255 until the write endpoints
+// were built and the contract was checked against them; a key the contract calls invalid must not be one the
+// server accepts, or a client written against the mock would behave differently against the real thing.
 const (
 	idempotencyKeyHeader = "Idempotency-Key"
-	minIdempotencyKeyLen = 8
-	maxIdempotencyKeyLen = 255
+	minIdempotencyKeyLen = 16
+	maxIdempotencyKeyLen = 128
 )
 
 // idempotencyKeyFrom returns the caller's key, and whether one was supplied.
@@ -89,7 +92,7 @@ func validateIdempotencyKey(key string) error {
 		return badRequest(idempotencyKeyHeader+" is too short to be a meaningful key", nil)
 	}
 	if len(key) > maxIdempotencyKeyLen {
-		return badRequest(idempotencyKeyHeader+" is longer than 255 characters", nil)
+		return badRequest(idempotencyKeyHeader+" is longer than 128 characters", nil)
 	}
 
 	for i := 0; i < len(key); i++ {

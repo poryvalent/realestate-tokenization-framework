@@ -51,6 +51,22 @@ type Deps struct {
 
 	// Outbox reads the chain queue for the operator console.
 	Outbox OutboxReader
+
+	// The write path. Every mutation needs DB; the rest are needed by some of them, and an endpoint whose
+	// dependency is missing is not registered rather than failing at request time.
+
+	// DB opens the transaction each mutation runs in.
+	DB TxBeginner
+	// BusinessClock returns a scheme's simulated calendar.
+	BusinessClock func(schemeID string) clock.Business
+	// Chain reads the block head and block hashes the ballot ceremony depends on.
+	Chain ChainReader
+	// ASBA places and settles funds blocks with the investor's bank.
+	ASBA ASBAProvider
+	// Publisher pins the bid book and the allotment file.
+	Publisher Publisher
+	// SeedPepper derives the ballot seed secret. It never leaves the process and is never logged.
+	SeedPepper []byte
 }
 
 // DefaultSessionTTL is how long a session lasts when none is configured.
@@ -168,6 +184,8 @@ func (s *Server) routes() http.Handler {
 	if s.signer != nil && s.deps.Outbox != nil {
 		mux.HandleFunc("GET /v1/admin/outbox", s.requireOperator()(s.handleListOutbox))
 	}
+
+	s.writeRoutes(mux)
 
 	// An explicit catch-all, so an unknown path produces the contract's error envelope rather than
 	// ServeMux's plain-text "404 page not found". A client parsing JSON should never have to special-case

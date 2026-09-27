@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ErrNotFound is returned when a row that was addressed by id does not exist.
@@ -49,6 +50,23 @@ type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
+
+// Writer is what a write needs: a transaction.
+//
+// Separate from Querier on purpose. Every read in this package takes a Querier, which has no Exec, so a read
+// path cannot be quietly turned into a write. A function that changes state takes a Writer, and in practice
+// that is always a pgx.Tx: the business row and the outbox entry that anchors it must commit together or not
+// at all, which is the entire point of a transactional outbox.
+type Writer interface {
+	Querier
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// ErrConflict is returned when a compare-and-set write finds the row already moved.
+//
+// Two operators pressing the same button, or a retry racing its original, both end here. The write is refused
+// rather than applied on top of a state the caller did not see.
+var ErrConflict = errors.New("store: the row changed since it was read")
 
 // unknownEnum builds the error for a value outside a Go enum.
 func unknownEnum(column, value string) error {

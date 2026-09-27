@@ -79,16 +79,18 @@ func TestTheIdempotencyKeyReachesTheHandler(t *testing.T) {
 // a log that a request header can forge is not evidence of anything.
 func TestUnusableIdempotencyKeysAreRefused(t *testing.T) {
 	cases := map[string]string{
-		"too short":        "abc",
-		"seven characters": "1234567",
-		"too long":         strings.Repeat("k", 256),
-		"embedded newline": "abcdefgh\nlevel=error msg=forged",
-		"carriage return":  "abcdefgh\rmore",
-		"tab":              "abcdefgh\tmore",
-		"space":            "abcd efgh",
-		"null byte":        "abcdefgh\x00",
-		"non-ascii":        "abcdefgh\u00e9",
-		"control char":     "abcdefgh\x1b[31m",
+		"too short":          "abc",
+		"fifteen characters": "123456789012345",
+		"too long":           strings.Repeat("k", 129),
+		// The charset cases are all at least 16 characters, so what is refused is the character and not
+		// the length. A short one would pass this test for the wrong reason.
+		"embedded newline": "abcdefghijklmnop\nlevel=error msg=forged",
+		"carriage return":  "abcdefghijklmnop\rmore",
+		"tab":              "abcdefghijklmnop\tmore",
+		"space":            "abcdefgh ijklmnopq",
+		"null byte":        "abcdefghijklmnop\x00",
+		"non-ascii":        "abcdefghijklmnop\u00e9",
+		"control char":     "abcdefghijklmnop\x1b[31m",
 	}
 
 	for name, key := range cases {
@@ -109,13 +111,13 @@ func TestUnusableIdempotencyKeysAreRefused(t *testing.T) {
 // TestAcceptableIdempotencyKeysPass checks the rule is not over-tight.
 func TestAcceptableIdempotencyKeysPass(t *testing.T) {
 	cases := map[string]string{
-		"eight characters": "12345678",
-		"a uuid":           "cfa9ddd6-0377-4cbf-83b8-23b8ca6fa1fa",
-		"hex":              "0x77467d592e66a60dd201ec919080ea66",
-		"with underscores": "client_request_00042",
-		"with dots":        "client.request.00042",
-		"255 characters":   strings.Repeat("k", 255),
-		"punctuation":      "req:2026-09-27/attempt=1",
+		"sixteen characters": "1234567890123456",
+		"a uuid":             "cfa9ddd6-0377-4cbf-83b8-23b8ca6fa1fa",
+		"hex":                "0x77467d592e66a60dd201ec919080ea66",
+		"with underscores":   "client_request_00042",
+		"with dots":          "client.request.00042",
+		"128 characters":     strings.Repeat("k", 128),
+		"punctuation":        "req:2026-09-27/attempt=1",
 	}
 
 	for name, key := range cases {

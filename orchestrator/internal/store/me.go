@@ -469,24 +469,50 @@ type Bid struct {
 	// BlockStatus is the ASBA funds block, empty when none has been requested.
 	BlockStatus  string
 	BlockedPaise *money.Paise
+	BlockedAt    *time.Time
+	BlockFailure string
+}
+
+// bidColumns is shared by every bid read so the scan order cannot drift.
+const bidColumns = `
+	b.id, b.offer_id, b.bid_reference, b.units_bid,
+	b.price_per_unit_paise, b.total_amount_paise,
+	b.status::text, coalesce(b.rejection_reason::text, ''), b.submitted_at,
+	coalesce(a.block_status::text, ''), a.blocked_amount_paise, a.blocked_at, coalesce(a.failure_code, '')`
+
+func scanBid(row pgx.Row) (Bid, error) {
+	var (
+		b       Bid
+		price   int64
+		total   int64
+		blocked *int64
+	)
+	if err := row.Scan(&b.ID, &b.OfferID, &b.BidReference, &b.Units,
+		&price, &total, &b.Status, &b.RejectionReason, &b.SubmittedAt,
+		&b.BlockStatus, &blocked, &b.BlockedAt, &b.BlockFailure); err != nil {
+		return Bid{}, err
+	}
+	b.PricePerUnit = money.Paise(price)
+	b.TotalAmount = money.Paise(total)
+	b.SubmittedAt = b.SubmittedAt.UTC()
+	b.BlockedAt = utcPtr(b.BlockedAt)
+	if blocked != nil {
+		v := money.Paise(*blocked)
+		b.BlockedPaise = &v
+	}
+	return b, nil
 }
 
 // Bids lists the investor's bids.
 func (s Me) Bids(ctx context.Context, investorID string, p Pagination) ([]Bid, error) {
 	p = p.normalise()
 
-	const q = `
-		SELECT b.id, b.offer_id, b.bid_reference, b.units_bid,
-		       b.price_per_unit_paise, b.total_amount_paise,
-		       b.status::text, coalesce(b.rejection_reason::text, ''), b.submitted_at,
-		       coalesce(a.block_status::text, ''), a.blocked_amount_paise
-		FROM bids b
-		LEFT JOIN asba_blocks a ON a.bid_id = b.id
-		WHERE b.investor_id = $1
-		ORDER BY b.submitted_at DESC
-		LIMIT $2`
-
-	rows, err := s.q.Query(ctx, q, investorID, p.Limit)
+	rows, err := s.q.Query(ctx, `
+		SELECT `+bidColumns+`
+		  FROM bids b LEFT JOIN asba_blocks a ON a.bid_id = b.id
+		 WHERE b.investor_id = $1
+		 ORDER BY b.submitted_at DESC
+		 LIMIT $2`, investorID, p.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -494,26 +520,26 @@ func (s Me) Bids(ctx context.Context, investorID string, p Pagination) ([]Bid, e
 
 	var out []Bid
 	for rows.Next() {
-		var (
-			b       Bid
-			price   int64
-			total   int64
-			blocked *int64
-		)
-		if err := rows.Scan(&b.ID, &b.OfferID, &b.BidReference, &b.Units,
-			&price, &total, &b.Status, &b.RejectionReason, &b.SubmittedAt,
-			&b.BlockStatus, &blocked); err != nil {
+		b, err := scanBid(rows)
+		if err != nil {
 			return nil, err
-		}
-
-		b.PricePerUnit = money.Paise(price)
-		b.TotalAmount = money.Paise(total)
-		b.SubmittedAt = b.SubmittedAt.UTC()
-		if blocked != nil {
-			v := money.Paise(*blocked)
-			b.BlockedPaise = &v
 		}
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// BidFor loads one bid, but only as its owner sees it.
+//
+// Scoped by investor in SQL, like every read in this file. The write path returns the bid it has just placed
+// through this, so even the confirmation of a write cannot be pointed at somebody else's row.
+func (s Me) BidFor(ctx context.Context, investorID, bidID string) (Bid, error) {
+	b, err := scanBid(s.q.QueryRow(ctx, `
+		SELECT `+bidColumns+`
+		  FROM bids b LEFT JOIN asba_blocks a ON a.bid_id = b.id
+		 WHERE b.id = $2 AND b.investor_id = $1`, investorID, bidID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Bid{}, ErrNotFound
+	}
+	return b, err
 }

@@ -212,40 +212,60 @@ func payoutToWire(p store.Payout) wirePayout {
 	return out
 }
 
-// wireBid is an investor's own bid.
+// wireBid is the contract's Bid.
+//
+// Corrected when placeBid was built: this type originally served `units` and a flat `blockStatus`, which the
+// contract calls `unitsBid` and a nested `block`. The conformance suite had checked Me and Holding but not
+// Bid, so the mismatch shipped on GET /me/bids until the write path used the same schema and the check was
+// extended to cover it.
 type wireBid struct {
-	ID                 string       `json:"id"`
-	OfferID            string       `json:"offerId"`
-	BidRef             string       `json:"bidRef"`
-	Units              int32        `json:"units"`
-	PricePerUnitPaise  money.Paise  `json:"pricePerUnitPaise"`
-	TotalAmountPaise   money.Paise  `json:"totalAmountPaise"`
-	Status             string       `json:"status"`
-	RejectionReason    *string      `json:"rejectionReason"`
-	SubmittedAt        timestamp    `json:"submittedAt"`
-	BlockStatus        *string      `json:"blockStatus"`
-	BlockedAmountPaise *money.Paise `json:"blockedAmountPaise"`
+	ID                string      `json:"id"`
+	OfferID           string      `json:"offerId"`
+	BidRef            string      `json:"bidRef"`
+	UnitsBid          int32       `json:"unitsBid"`
+	PricePerUnitPaise money.Paise `json:"pricePerUnitPaise"`
+	TotalAmountPaise  money.Paise `json:"totalAmountPaise"`
+	Status            string      `json:"status"`
+	RejectionReason   *string     `json:"rejectionReason"`
+	Block             *wireBlock  `json:"block,omitempty"`
+	SubmittedAt       timestamp   `json:"submittedAt"`
+}
+
+// wireBlock is the contract's AsbaBlock. The money never leaves the investor's account.
+type wireBlock struct {
+	Status               string       `json:"status"`
+	RequestedAmountPaise money.Paise  `json:"requestedAmountPaise"`
+	BlockedAmountPaise   *money.Paise `json:"blockedAmountPaise"`
+	FailureCode          *string      `json:"failureCode"`
+	BlockedAt            *timestamp   `json:"blockedAt"`
 }
 
 func bidToWire(b store.Bid) wireBid {
 	out := wireBid{
-		ID:                 b.ID,
-		OfferID:            b.OfferID,
-		BidRef:             b.BidReference,
-		Units:              b.Units,
-		PricePerUnitPaise:  b.PricePerUnit,
-		TotalAmountPaise:   b.TotalAmount,
-		Status:             b.Status,
-		SubmittedAt:        b.SubmittedAt,
-		BlockedAmountPaise: b.BlockedPaise,
+		ID:                b.ID,
+		OfferID:           b.OfferID,
+		BidRef:            b.BidReference,
+		UnitsBid:          b.Units,
+		PricePerUnitPaise: b.PricePerUnit,
+		TotalAmountPaise:  b.TotalAmount,
+		Status:            b.Status,
+		SubmittedAt:       b.SubmittedAt,
 	}
 	if b.RejectionReason != "" {
 		reason := b.RejectionReason
 		out.RejectionReason = &reason
 	}
 	if b.BlockStatus != "" {
-		status := b.BlockStatus
-		out.BlockStatus = &status
+		out.Block = &wireBlock{
+			Status:               b.BlockStatus,
+			RequestedAmountPaise: b.TotalAmount,
+			BlockedAmountPaise:   b.BlockedPaise,
+			BlockedAt:            b.BlockedAt,
+		}
+		if b.BlockFailure != "" {
+			code := b.BlockFailure
+			out.Block.FailureCode = &code
+		}
 	}
 	return out
 }

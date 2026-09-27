@@ -54,15 +54,15 @@ const selectColumns = `
 
 func scanEntry(row pgx.Row) (*Entry, error) {
 	var (
-		e            Entry
-		payloadJSON  string
-		payloadHash  []byte
-		calldata     []byte
-		idemKey      []byte
-		relatedID    *string
-		gasPrice     string
-		statusText   string
-		envTag       string
+		e           Entry
+		payloadJSON string
+		payloadHash []byte
+		calldata    []byte
+		idemKey     []byte
+		relatedID   *string
+		gasPrice    string
+		statusText  string
+		envTag      string
 	)
 
 	err := row.Scan(
@@ -91,6 +91,24 @@ func scanEntry(row pgx.Row) (*Entry, error) {
 }
 
 func (p *PostgresStore) Enqueue(ctx context.Context, n NewEntry) (*Entry, error) {
+	return EnqueueWith(ctx, p.pool, n)
+}
+
+// RowQuerier is the one method EnqueueWith needs. Both *pgxpool.Pool and pgx.Tx satisfy it.
+type RowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// EnqueueWith inserts an outbox entry through the given connection or transaction.
+//
+// # Why this exists alongside Enqueue
+//
+// The whole point of a transactional outbox is that the business write and the queued chain call commit
+// together or not at all. Enqueue runs on the pool, so a caller that wrote a ballot run and then enqueued
+// its anchor would have two commits, and a crash between them would leave either a ballot run with no
+// anchor queued or an anchor queued for a row that never existed. Passing the caller's transaction here
+// makes them one commit.
+func EnqueueWith(ctx context.Context, db RowQuerier, n NewEntry) (*Entry, error) {
 	hash := sha256.Sum256(n.Payload)
 
 	var relatedID *string
@@ -109,7 +127,7 @@ func (p *PostgresStore) Enqueue(ctx context.Context, n NewEntry) (*Entry, error)
 		) VALUES ($1, $2, $3, $4::jsonb, $5, $6, 'QUEUED', $7::environment_tag, $8, $9)
 		RETURNING ` + selectColumns
 
-	e, err := scanEntry(p.pool.QueryRow(ctx, q,
+	e, err := scanEntry(db.QueryRow(ctx, q,
 		n.SchemeID, n.TargetContract, n.FunctionName, string(n.Payload), hash[:],
 		n.IdempotencyKey.Bytes(), n.EnvironmentTag, relatedType, relatedID))
 	if err != nil {

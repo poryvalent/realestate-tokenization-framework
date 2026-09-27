@@ -920,8 +920,11 @@ func TestInvestorResponsesConformToContract(t *testing.T) {
 	})
 
 	// The list endpoints are validated per item, because the envelope is not itself a published schema.
+	// Bid was missing from this list, which is how GET /me/bids shipped `units` where the contract says
+	// `unitsBid`. Every list the investor surface serves is here now.
 	lists := []struct{ path, schema string }{
 		{"/v1/me/holdings", "Holding"},
+		{"/v1/me/bids", "Bid"},
 	}
 
 	for _, tc := range lists {

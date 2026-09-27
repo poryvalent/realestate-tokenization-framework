@@ -133,6 +133,10 @@ var errorClasses = []classification{
 	// endpoint is missing and a 401 would send them round a login loop that cannot succeed.
 	{store.ErrNoInvestorForIdentity, http.StatusForbidden, CodeForbidden},
 
+	// A compare-and-set write found the row already moved: another request acted first. The caller's view
+	// is stale, and the right response is to reload rather than to retry blindly.
+	{store.ErrConflict, http.StatusConflict, CodePreconditionFailed},
+
 	// A pause applies across every domain and is the most specific thing that can be said, so it is first.
 	{offer.ErrPaused, http.StatusLocked, CodePaused},
 	{period.ErrPaused, http.StatusLocked, CodePaused},

@@ -356,14 +356,18 @@ func TestBidsShowTheirFundsBlock(t *testing.T) {
 	}
 
 	bid := items[0].(map[string]any)
-	if int64(bid["units"].(float64)) != 4 {
-		t.Errorf("units = %v, want 4", bid["units"])
+	if int64(bid["unitsBid"].(float64)) != 4 {
+		t.Errorf("unitsBid = %v, want 4", bid["unitsBid"])
 	}
-	if bid["blockStatus"] != "BLOCKED" {
-		t.Errorf("blockStatus = %v, want BLOCKED", bid["blockStatus"])
+	block, ok := bid["block"].(map[string]any)
+	if !ok {
+		t.Fatalf("block = %v, want the nested AsbaBlock the contract publishes", bid["block"])
 	}
-	if int64(bid["blockedAmountPaise"].(float64)) != 400000000 {
-		t.Errorf("blockedAmountPaise = %v, want 4 units at ₹10 lakh", bid["blockedAmountPaise"])
+	if block["status"] != "BLOCKED" {
+		t.Errorf("block.status = %v, want BLOCKED", block["status"])
+	}
+	if int64(block["blockedAmountPaise"].(float64)) != 400000000 {
+		t.Errorf("block.blockedAmountPaise = %v, want 4 units at ₹10 lakh", block["blockedAmountPaise"])
 	}
 	// The reference is the investor's own receipt, and the bid book is ordered by it.
 	ref, _ := bid["bidRef"].(string)
@@ -383,11 +387,8 @@ func TestABidWithNoBlockReadsAsNull(t *testing.T) {
 	body := decodeBody(t, getAs(t, srv, "/v1/me/bids", investorToken(t, srv, investorID)))
 	bid := body["items"].([]any)[0].(map[string]any)
 
-	if bid["blockStatus"] != nil {
-		t.Errorf("blockStatus = %v, want null with no block requested", bid["blockStatus"])
-	}
-	if bid["blockedAmountPaise"] != nil {
-		t.Errorf("blockedAmountPaise = %v, want null", bid["blockedAmountPaise"])
+	if _, present := bid["block"]; present {
+		t.Errorf("block = %v, want it absent with no block requested", bid["block"])
 	}
 }
 

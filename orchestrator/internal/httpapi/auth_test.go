@@ -393,7 +393,7 @@ func TestSessionRouteIsAbsentWithoutItsDependencies(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, "/v1/auth/session", strings.NewReader(`{"idToken":"x"}`))
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set(idempotencyKeyHeader, "idem-key-12345")
+			req.Header.Set(idempotencyKeyHeader, "idem-key-1234567890")
 			rec := httptest.NewRecorder()
 			s.ServeHTTP(rec, req)
 
