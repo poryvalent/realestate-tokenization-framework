@@ -86,6 +86,15 @@ const (
 	OutcomeNilTechnical Outcome = "NIL_TECHNICAL"
 )
 
+// AllOutcomes lists every outcome in the order the enums require.
+//
+// The order is not cosmetic. The numeric position is the code written into the allotment leaf preimage,
+// so it must match the Solidity enum and the allocation_outcome Postgres enum. Returned in that order so
+// a caller enumerating outcomes cannot accidentally imply a different one.
+func AllOutcomes() []Outcome {
+	return []Outcome{OutcomeFull, OutcomePartial, OutcomeNilBallot, OutcomeNilTechnical}
+}
+
 func (o Outcome) code() (byte, error) {
 	switch o {
 	case OutcomeFull:
@@ -211,16 +220,16 @@ func (p Params) Validate() error {
 
 // Allocation is the outcome for one bid.
 type Allocation struct {
-	LeafIndex       uint32
-	BidRef          string
-	InvestorAnchor  merkle.Hash
-	UnitsBid        uint32
-	UnitsAllotted   uint32
-	Outcome         Outcome
-	Rejection       Rejection
-	BallotRank      uint32
-	AmountPayable   money.Paise
-	RefundAmount    money.Paise
+	LeafIndex      uint32
+	BidRef         string
+	InvestorAnchor merkle.Hash
+	UnitsBid       uint32
+	UnitsAllotted  uint32
+	Outcome        Outcome
+	Rejection      Rejection
+	BallotRank     uint32
+	AmountPayable  money.Paise
+	RefundAmount   money.Paise
 }
 
 // Feasibility reports the three independent tests, each separately.
@@ -230,10 +239,10 @@ type Allocation struct {
 // only understands that the regulation was read when the failure names which test
 // failed and by how much.
 type Feasibility struct {
-	TotalBids       uint32
-	EligibleBids    uint32
+	TotalBids        uint32
+	EligibleBids     uint32
 	TechnicalRejects uint32
-	TotalUnitsBid   uint64
+	TotalUnitsBid    uint64
 
 	SubscriptionMet     bool
 	HolderFloorMet      bool

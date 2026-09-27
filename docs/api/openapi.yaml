@@ -1,0 +1,1730 @@
+openapi: 3.1.0
+
+info:
+  title: AcreSync API
+  version: 1.0.0-draft
+  summary: SM-REIT issuance, distribution and verification.
+  description: |
+    # Status of this document
+
+    A **contract, not an implementation**. No HTTP layer exists in the repository yet: the only
+    outbound HTTP is the Pinata and RazorpayX clients, and `ACRESYNC_HTTP_ADDR` is configured but
+    unused. This document exists so the frontend can be built against a mock while the handlers are
+    written behind it.
+
+    Every schema here is derived from a Go type that already exists and already passes tests, so the
+    payload shapes are not guesses. Where a field maps to a domain type the description names it.
+
+    # The three audiences
+
+    `public` — no authentication. This is the transparency surface and it is the point of the whole
+    system: the published bid book, the allotment file, the ballot seed, the NDCF statement, and
+    Merkle proofs. A third party must be able to verify an allotment or an entitlement without any
+    access to AcreSync. Contains no personal data.
+
+    `investor` — an authenticated unitholder, who sees only their own rows.
+
+    `operator` — the investment manager, trustee or compliance user driving the lifecycle.
+
+    # Conventions
+
+    **Money** is always an integer count of paise, and every such field is suffixed `Paise`. Never a
+    decimal, never rupees. A JSON number is safe here: the largest realistic figure is the scheme's
+    ₹50 crore, or 5e10 paise, well inside the 2^53 exact-integer range of a float64. This also matches
+    the pinned documents, which already publish integer paise.
+
+    **Timestamps** are RFC 3339 in UTC with a `Z` suffix, matching the document builders. A numeric
+    offset is a second spelling of the same instant and is not accepted. **Calendar dates** such as a
+    record date are `YYYY-MM-DD`.
+
+    **Digests, roots and addresses** are `0x`-prefixed lowercase hex, matching `merkle.Hash.Hex()` and
+    the register's address constraint.
+
+    **Statuses** are the domain vocabularies verbatim. In particular payouts report AcreSync's own
+    status (`SETTLED`), never the payment provider's (`processed`), so the frontend never couples to a
+    vendor's words.
+
+  contact:
+    name: AcreSync engineering
+  license:
+    name: Proprietary. All rights reserved.
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: http://127.0.0.1:8080/v1
+    description: Local development
+  - url: http://127.0.0.1:4010/v1
+    description: Prism mock server
+
+tags:
+  - name: public
+    description: Unauthenticated verification surface. No personal data.
+  - name: investor
+    description: An authenticated unitholder's own records.
+  - name: operator
+    description: Lifecycle control for the manager, trustee and compliance.
+
+security:
+  - investorAuth: []
+
+paths:
+  # ---------------------------------------------------------------- public ----
+
+  /schemes:
+    get:
+      tags: [public]
+      security: []
+      operationId: listSchemes
+      summary: List schemes.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of schemes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Scheme' }
+                  nextCursor:
+                    $ref: '#/components/schemas/NextCursor'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /schemes/{schemeId}:
+    get:
+      tags: [public]
+      security: []
+      operationId: getScheme
+      summary: Public facts about one scheme, including its deployed contracts.
+      parameters:
+        - $ref: '#/components/parameters/SchemeId'
+      responses:
+        '200':
+          description: The scheme.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Scheme' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /schemes/{schemeId}/offers:
+    get:
+      tags: [public]
+      security: []
+      operationId: listOffers
+      summary: Offers for a scheme.
+      parameters:
+        - $ref: '#/components/parameters/SchemeId'
+      responses:
+        '200':
+          description: Offers, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Offer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{offerId}:
+    get:
+      tags: [public]
+      security: []
+      operationId: getOffer
+      summary: Offer terms, status and subscription progress.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: The offer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{offerId}/documents:
+    get:
+      tags: [public]
+      security: []
+      operationId: listOfferDocuments
+      summary: Pinned documents for an offer, with the digest anchored on-chain.
+      description: |
+        The bid book and the allotment file. `digest` is what a verifier compares against: fetch the
+        bytes, hash them with SHA-256, and check. The CID is only a locator, which is why the digest is
+        what gets anchored rather than the address.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Documents published for this offer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PublishedDocument' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{offerId}/ballot:
+    get:
+      tags: [public]
+      security: []
+      operationId: getBallot
+      summary: The commit-reveal ceremony, as it stands.
+      description: |
+        Derived from `ballotrun.Ceremony`. Before the reveal, `seedPlaintext` and `finalSeed` are
+        absent: that absence is the security property, since the secret is committed before the target
+        block exists. After the reveal both are published, because by then there is nothing left to
+        influence and the draw has to be reproducible by anyone.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Ceremony state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BallotCeremony' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{offerId}/allotments:
+    get:
+      tags: [public]
+      security: []
+      operationId: listAllotments
+      summary: Every bid's outcome, winners and losers alike.
+      description: |
+        Derived from `ballotrun.Line`. Identified only by leaf index and investor anchor, never by name
+        or internal identifier. Losing bids are included deliberately: a bidder who won nothing is the
+        one with the strongest reason to check the draw, and publishing only winners would make the
+        outcome unfalsifiable for exactly those people.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of allotments, ordered by leaf index.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PublishedAllotment' }
+                  nextCursor:
+                    $ref: '#/components/schemas/NextCursor'
+        '404':
+          description: No such offer, or the draw has not run so there are no allotments to publish.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /offers/{offerId}/proofs/bids/{bidRef}:
+    get:
+      tags: [public]
+      security: []
+      operationId: getBidProof
+      summary: Merkle proof that a bid was in the frozen book.
+      description: |
+        Public by design. The bid reference is the investor's own receipt, like an application number,
+        and the book is ordered by it precisely so a bidder can find their own leaf in the published
+        document without being told anything they do not already hold.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - name: bidRef
+          in: path
+          required: true
+          description: The investor's bid reference. 32 lowercase hex characters.
+          schema: { $ref: '#/components/schemas/BidRef' }
+      responses:
+        '200':
+          description: The proof and the leaf it proves.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InclusionProof' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /schemes/{schemeId}/periods:
+    get:
+      tags: [public]
+      security: []
+      operationId: listPeriods
+      summary: Distribution periods for a scheme.
+      parameters:
+        - $ref: '#/components/parameters/SchemeId'
+      responses:
+        '200':
+          description: Periods, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Period' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /periods/{periodId}:
+    get:
+      tags: [public]
+      security: []
+      operationId: getPeriod
+      summary: One distribution period.
+      parameters:
+        - $ref: '#/components/parameters/PeriodId'
+      responses:
+        '200':
+          description: The period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Period' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /periods/{periodId}/ndcf:
+    get:
+      tags: [public]
+      security: []
+      operationId: getNdcfStatement
+      summary: The NDCF statement and the distribution ratio achieved.
+      description: |
+        Derived from `ndcf.Result`. `distributionBps` against `floorBps` is the statutory 95% test. The
+        floor applies to NDCF, not to gross rent.
+      parameters:
+        - $ref: '#/components/parameters/PeriodId'
+      responses:
+        '200':
+          description: The statement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NdcfStatement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /periods/{periodId}/proofs/entitlements/{walletAddress}:
+    get:
+      tags: [public]
+      security: []
+      operationId: getEntitlementProof
+      summary: Merkle proof of a holder's entitlement for a period.
+      description: |
+        Keyed by wallet address rather than by investor anchor. The anchor is an HMAC under a key held
+        in KMS, so a holder cannot compute their own; requiring it would mean AcreSync had to hand over
+        a value only AcreSync can derive, which would defeat the purpose of publishing proofs at all.
+
+        Returns the gross entitlement only. Net of tax is not published, because publishing it beside a
+        public unit count would disclose the holder's tax classification.
+      parameters:
+        - $ref: '#/components/parameters/PeriodId'
+        - name: walletAddress
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Address' }
+      responses:
+        '200':
+          description: The proof and the leaf it proves.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InclusionProof' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------- investor ----
+
+  /me:
+    get:
+      tags: [investor]
+      operationId: getMe
+      summary: The authenticated investor's profile and onboarding state.
+      responses:
+        '200':
+          description: The investor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/holdings:
+    get:
+      tags: [investor]
+      operationId: listMyHoldings
+      summary: Units held, per scheme.
+      responses:
+        '200':
+          description: Holdings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Holding' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/bids:
+    get:
+      tags: [investor]
+      operationId: listMyBids
+      summary: The investor's bids, with funds-block and allotment state.
+      responses:
+        '200':
+          description: Bids, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Bid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/entitlements:
+    get:
+      tags: [investor]
+      operationId: listMyEntitlements
+      summary: Entitlements per period, gross, tax withheld and net.
+      description: |
+        Derived from `entitlement.Line`. Unlike the public proof endpoint this includes the tax
+        deduction and the net figure, because it is the holder's own record.
+      parameters:
+        - name: schemeId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Entitlements, newest period first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MyEntitlement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/payouts:
+    get:
+      tags: [investor]
+      operationId: listMyPayouts
+      summary: Payout instructions and their settlement state.
+      responses:
+        '200':
+          description: Payouts, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payout' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /offers/{offerId}/bids:
+    post:
+      tags: [investor]
+      operationId: placeBid
+      summary: Place a bid and request the funds block.
+      description: |
+        Creates the bid and asks the investor's bank to block the full amount. Under ASBA the money
+        stays in the investor's own account and is only debited to the extent units are allotted, so
+        this call reserves rather than collects.
+
+        A block is all or nothing. An account short of the full amount fails rather than partially
+        reserving, because a partial block is not a smaller valid bid: it would leave the bid unpayable
+        by exactly the shortfall, and the failure would surface at debit time after the cap table was
+        already anchored.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceBidRequest' }
+      responses:
+        '201':
+          description: Bid accepted and the block requested.
+          headers:
+            Idempotency-Replayed: { $ref: '#/components/headers/IdempotencyReplayed' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Bid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  # -------------------------------------------------------------- operator ----
+
+  /admin/offers:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: createOffer
+      summary: Create an offer in CONFIGURED.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfferRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /admin/offers/{offerId}/readiness:
+    get:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: getOfferReadiness
+      summary: Whether the offer can advance, and what is blocking it.
+      description: |
+        Evaluates `offer.Guard` without performing anything. This is the endpoint an operator console
+        should be built around: rather than offering a button that fails, it reports the next expected
+        status and a list of unmet preconditions in the domain's own words.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Readiness.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/offers/{offerId}/transitions:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: advanceOffer
+      summary: Advance the offer to the next status.
+      description: |
+        Refused unless every precondition for the target status holds. An abort additionally requires a
+        reason, because an abort with no recorded cause is indistinguishable from a mistake.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { $ref: '#/components/schemas/OfferStatus' }
+                reason:
+                  type: string
+                  description: Required when `to` is ABORTED.
+      responses:
+        '200':
+          description: Advanced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '423': { $ref: '#/components/responses/Paused' }
+
+  /admin/offers/{offerId}/book/freeze:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: freezeBook
+      summary: Freeze the bid book, compute its root, pin it and queue the anchor.
+      description: |
+        Fixes the set of bids. Every bid in the book must hold a confirmed funds block covering exactly
+        units times price; a block placed before a correction is still BLOCKED while covering the wrong
+        amount, and admitting it would defer the failure to debit time.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Frozen.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookFreezeResult' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/ballot/commit:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: commitSeed
+      summary: Anchor the seed commitment.
+      description: |
+        Takes no secret and no block number. The secret is derived from the scheme and offer under a KMS
+        pepper, and the contract chooses the target block: a caller who could pick the block would pick
+        one whose hash it had reason to prefer, and the ceremony would prove nothing.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Commitment queued for anchoring.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BallotCeremony' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/ballot/reveal:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: revealSeed
+      summary: Reveal the secret and derive the final seed.
+      description: |
+        Valid only while `targetBlock < currentBlock <= targetBlock + revealWindowBlocks`. The lower
+        bound is strict because a block's hash is not determined until the block after it.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Reveal queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BallotCeremony' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/ballot/recommit:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: recommitSeed
+      summary: Reroll the target block after a lapsed reveal window.
+      description: |
+        Reuses the stored commitment, so only the block hash is rerolled. Permitted only once the window
+        has actually lapsed: recommitting while a reveal is still possible would let an operator who can
+        already compute the draw abandon it and roll again. Capped at three attempts, after which a
+        trustee must escalate.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Recommit queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BallotCeremony' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/ballot/draw:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: drawBallot
+      summary: Run the allocation, pin the allotment file and queue the result anchor.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Drawn.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DrawResult' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/settlement:
+    get:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: getSettlement
+      summary: The settlement plan, the chain's cursor, and whether finalisation would succeed.
+      description: |
+        `finalisation.failures` lists every unmet invariant rather than the first. The contract reverts
+        on the earliest failure, so an operator fixing them one at a time would need a fresh transaction
+        to discover the next.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Settlement state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementState' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/offers/{offerId}/settlement/begin:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: beginSettlement
+      summary: Open settlement, binding it permanently to the anchored ballot result.
+      description: |
+        `expectedUnits` and `expectedHolders` cover the public side only. The manager's units are
+        credited separately and outside the settlement cursor, so declaring the scheme total here would
+        make every batch fail the running check.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Settlement opening queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementState' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/settlement/batches:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: submitSettlementBatch
+      summary: Credit the next batch of holders.
+      description: |
+        `cursorFrom` must equal the number of holders already credited, exactly. Batches cannot overlap,
+        skip or be reordered. A batch that ran out of gas did not advance the cursor and is retryable
+        verbatim with the same idempotency key; a batch that succeeded is rejected by both the key and
+        the cursor.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cursorFrom]
+              properties:
+                cursorFrom:
+                  type: integer
+                  format: int32
+                  minimum: 0
+      responses:
+        '202':
+          description: Batch queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementState' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/offers/{offerId}/settlement/finalise:
+    post:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: finaliseSettlement
+      summary: Close settlement and move the scheme to Settled.
+      description: |
+        Permissionless on-chain, deliberately: if only the operator could finalise, the honest answer to
+        "so you control the final cap table" would be yes. Five invariants must hold, and a failed
+        attempt leaves the settlement open so it can be corrected and retried.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Finalisation queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementState' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/periods/{periodId}/reconciliation:
+    get:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: getReconciliation
+      summary: Depository register against the on-chain mirror.
+      description: |
+        Derived from `period.Reconciliation`. When `blocksPayout` is true a divergence exists and the
+        database itself refuses to instruct payouts until it is resolved.
+      parameters:
+        - $ref: '#/components/parameters/PeriodId'
+      responses:
+        '200':
+          description: Reconciliation result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reconciliation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/outbox:
+    get:
+      tags: [operator]
+      security: [{ operatorAuth: [] }]
+      operationId: listOutbox
+      summary: The chain transaction queue.
+      parameters:
+        - name: schemeId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OutboxStatus' }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of outbox entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OutboxEntry' }
+                  nextCursor:
+                    $ref: '#/components/schemas/NextCursor'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+
+  securitySchemes:
+    investorAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Web3Auth-issued token identifying a unitholder.
+    operatorAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Operator token. Roles mirror the on-chain roles, so an action the chain would refuse is refused
+        here too rather than being attempted and reverting.
+
+  parameters:
+    SchemeId:
+      name: schemeId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PeriodId:
+      name: periodId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      description: Page size. Defaults to 50.
+      schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from the previous response's `nextCursor`.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated, unique per logical operation. Replaying the same key with the same body returns
+        the original response; replaying it with a different body is a conflict. Required on every
+        mutation, because a retry after a dropped connection must not place a second funds block or
+        anchor a second transaction.
+      schema: { type: string, minLength: 16, maxLength: 128 }
+
+  headers:
+    IdempotencyReplayed:
+      description: Present and true when this response was replayed from a previous identical request.
+      schema: { type: boolean }
+
+  responses:
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: |
+        The action is not permitted in the current state. `code` distinguishes why: `precondition_failed`,
+        `not_feasible`, `anchor_not_confirmed`, `ceremony_order`, `units_issued`, `settlement_incomplete`
+        or `idempotency_conflict`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            error:
+              code: anchor_not_confirmed
+              message: >-
+                the bid book anchor needs 5 confirmations before the draw is bound to it; a reorg
+                afterwards would leave the commitment bound to a book the chain no longer records
+              requestId: req_01HQ8Z3M
+    ValidationFailed:
+      description: The request was well-formed but a business rule rejected it.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Paused:
+      description: The scheme is paused. Everything except an abort is refused.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    BadRequest:
+      description: Malformed parameters, such as an unparseable cursor or an out-of-range limit.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Forbidden:
+      description: Authenticated, but this role may not perform the action.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+
+    # --- primitives ---
+
+    Paise:
+      type: integer
+      format: int64
+      minimum: 0
+      description: An integer count of paise. 100 paise is one rupee.
+      examples: [100000000]
+
+    Bytes32:
+      type: string
+      pattern: '^0x[0-9a-f]{64}$'
+      description: A SHA-256 digest or Merkle root, 0x-prefixed lowercase hex.
+      examples: ['0x77467d592e66a60dd201ec919080ea66eedf1f8b32171fc9bbfa88761937b7ad']
+
+    Address:
+      type: string
+      pattern: '^0x[0-9a-f]{40}$'
+      description: An Ethereum address, lowercase.
+      examples: ['0xf858a002402e968d1c7ec62c3824d30520e9ca38']
+
+    BidRef:
+      type: string
+      pattern: '^[0-9a-f]{32}$'
+      description: The investor's bid reference, 16 bytes as hex. Their receipt for the bid.
+      examples: ['9e107d9d372bb6826bd81d3542a419d6']
+
+    NextCursor:
+      type: [string, 'null']
+      description: Cursor for the next page, or null when this is the last page.
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339, UTC, Z-suffixed.
+      examples: ['2026-05-09T11:00:00Z']
+
+    # --- errors ---
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - precondition_failed
+                - not_feasible
+                - anchor_not_confirmed
+                - ceremony_order
+                - units_issued
+                - settlement_incomplete
+                - validation_failed
+                - idempotency_conflict
+                - paused
+                - not_found
+                - unauthorized
+                - forbidden
+                - internal
+            message:
+              type: string
+              description: |
+                The domain's own explanation, passed through rather than replaced. These sentences state
+                what is wrong and usually why it matters, and they are safe to surface to an operator.
+            details:
+              type: object
+              additionalProperties: true
+            requestId:
+              type: string
+
+    # --- enums, mirroring the Go domain exactly ---
+
+    OfferStatus:
+      type: string
+      description: Mirrors `offer.Status` and the `offer_status` database enum.
+      enum:
+        - CONFIGURED
+        - OPEN
+        - CLOSED
+        - BOOK_FROZEN
+        - FEASIBILITY_CHECKED
+        - BIDBOOK_ANCHORED
+        - SEED_COMMITTED
+        - SEED_REVEALED
+        - BALLOT_DRAWN
+        - ALLOTMENT_FINALISED
+        - SETTLED
+        - ABORTED
+
+    BallotStage:
+      type: string
+      description: Mirrors `ballotrun.Stage` and the `ballot_status` database enum.
+      enum:
+        - PENDING
+        - BIDBOOK_ANCHORED
+        - SEED_COMMITTED
+        - SEED_REVEALED
+        - DRAWN
+        - RESULT_ANCHORED
+        - ESCALATED
+        - ABANDONED
+
+    AllocationOutcome:
+      type: string
+      description: |
+        Mirrors `ballot.Outcome`. The order is significant: the numeric position is part of the allotment
+        leaf preimage and must match the Solidity enum.
+      enum: [FULL, PARTIAL, NIL_BALLOT, NIL_TECHNICAL]
+
+    AsbaBlockStatus:
+      type: string
+      description: |
+        Mirrors `asba.BlockStatus`. Only BLOCKED holds funds. DEBITED and UNBLOCKED are both terminal and
+        both mean the reservation is released; only DEBITED moved money.
+      enum: [REQUESTED, BLOCKED, DEBITED, UNBLOCKED, FAILED]
+
+    PeriodStatus:
+      type: string
+      description: Mirrors `period.Status`.
+      enum:
+        - OPEN
+        - RENT_COLLECTED
+        - NDCF_DRAFTED
+        - NDCF_APPROVED
+        - RECORD_DATE_DECLARED
+        - SNAPSHOT_TAKEN
+        - RECONCILED
+        - CHAIN_STALE
+        - ANCHORED
+        - ENTITLEMENTS_ANCHORED
+        - PAYOUT_INSTRUCTED
+        - PAYOUTS_CONFIRMED
+        - CLOSED
+        - REVERSED
+
+    PayoutStatus:
+      type: string
+      description: |
+        Mirrors `payout.DBStatus`, which is AcreSync's own vocabulary. Deliberately not the payment
+        provider's set, so the frontend never depends on a vendor's words.
+
+        SETTLED is not the end of the story: a settled payout can still be reversed by the bank, which is
+        why REVERSED exists as a distinct state rather than being folded into FAILED.
+      enum: [QUEUED, SUBMITTED, PROCESSING, SETTLED, FAILED, REVERSED]
+
+    InvestorClass:
+      type: string
+      description: Mirrors `entitlement.InvestorClass`. Determines the withholding rate.
+      enum: [RESIDENT_IND, NRI, BODY_CORPORATE, HUF]
+
+    NdcfLineType:
+      type: string
+      description: Mirrors `ndcf.LineType`.
+      enum:
+        - GROSS_RENT
+        - CAM_RECOVERY
+        - INTEREST_INCOME
+        - PROPERTY_TAX
+        - INSURANCE
+        - MAINTENANCE
+        - TRUSTEE_FEE
+        - IM_FEE
+        - VALUER_FEE
+        - AUDIT_FEE
+        - STATUTORY_RESERVE
+        - WORKING_CAPITAL_RESERVE
+        - DEBT_SERVICE
+        - OTHER
+
+    NdcfDirection:
+      type: string
+      enum: [INFLOW, OUTFLOW]
+
+    ReconciliationStatus:
+      type: string
+      description: Mirrors `period.ReconciliationStatus`.
+      enum: [MATCHED, DIVERGED, RESOLVED]
+
+    SettlementStage:
+      type: string
+      description: |
+        Mirrors the contract's SettlementStage enum, whose ordinals are NOT_STARTED 0, IN_PROGRESS 1,
+        FINALISED 2. Exposed as a name rather than a number.
+      enum: [NOT_STARTED, IN_PROGRESS, FINALISED]
+
+    OutboxStatus:
+      type: string
+      enum: [QUEUED, SIGNED, BROADCAST, PENDING, CONFIRMING, CONFIRMED, FAILED, REORGED, DEAD_LETTER, CANCELLED]
+
+    # --- resources ---
+
+    Scheme:
+      type: object
+      required: [id, sebiSchemeRef, name, unitPricePaise, totalUnits, imUnits, publicUnits, minPublicHolders, distributionFloorBps, environmentTag]
+      properties:
+        id: { type: string, format: uuid }
+        sebiSchemeRef: { type: string, examples: ['SEBI/SM-REIT/2026/001'] }
+        name: { type: string, examples: ['AcreSync Whitefield Scheme I'] }
+        assetValuePaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          description: ₹50 crore is the statutory floor for an SM-REIT scheme.
+          examples: [50000000000]
+        unitPricePaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          description: ₹10 lakh per unit.
+          examples: [100000000]
+        totalUnits: { type: integer, format: int32, examples: [500] }
+        imUnits:
+          type: integer
+          format: int32
+          description: Units the investment manager must hold. Excluded from the statutory holder count.
+          examples: [25]
+        publicUnits: { type: integer, format: int32, examples: [475] }
+        minPublicHolders:
+          type: integer
+          format: int32
+          description: Statutory floor. At least 200 for an SM-REIT.
+          examples: [200]
+        distributionFloorBps:
+          type: integer
+          description: Minimum share of NDCF to distribute, in basis points. 9500 is 95%.
+          examples: [9500]
+        schemeStatus:
+          type: string
+          description: Lifecycle status as recorded on-chain.
+          examples: ['Operational']
+        environmentTag:
+          type: string
+          enum: [LOCAL, SEPOLIA_SIM]
+          description: |
+            Written into every anchor and admin action so a simulated record can never be mistaken for a
+            live one.
+        contracts:
+          type: object
+          properties:
+            chainId: { type: integer, examples: [11155111] }
+            roles: { $ref: '#/components/schemas/Address' }
+            ballot: { $ref: '#/components/schemas/Address' }
+            scheme: { $ref: '#/components/schemas/Address' }
+
+    OfferTerms:
+      type: object
+      description: Mirrors `offer.Terms`, which mirrors the offers table and its constraints.
+      required: [unitsOnOffer, minBidUnits, maxBidUnits, minSubscriptionUnits, minDistinctHolders, priceBandLowerPaise, priceBandUpperPaise, opensAt, closesAt, allotmentDueAt]
+      properties:
+        unitsOnOffer: { type: integer, format: int32, examples: [475] }
+        minBidUnits: { type: integer, format: int32, examples: [1] }
+        maxBidUnits:
+          type: integer
+          format: int32
+          description: |
+            Capped so the holder floor stays reachable. The largest permissible value is
+            `unitsOnOffer - (minDistinctHolders - 1)`; above that the offer could be fully subscribed in
+            rupees and still be unlistable.
+          examples: [25]
+        minSubscriptionUnits: { type: integer, format: int32, examples: [428] }
+        minDistinctHolders: { type: integer, format: int32, examples: [200] }
+        priceBandLowerPaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          description: Never below ₹10 lakh, the statutory minimum unit price.
+          examples: [100000000]
+        priceBandUpperPaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          examples: [105000000]
+        opensAt: { $ref: '#/components/schemas/Timestamp' }
+        closesAt: { $ref: '#/components/schemas/Timestamp' }
+        allotmentDueAt: { $ref: '#/components/schemas/Timestamp' }
+
+    Offer:
+      type: object
+      required: [id, schemeId, offerType, status, terms]
+      properties:
+        id: { type: string, format: uuid }
+        schemeId: { type: string, format: uuid }
+        offerType: { type: string, enum: [INITIAL, FOLLOW_ON] }
+        status: { $ref: '#/components/schemas/OfferStatus' }
+        terms: { $ref: '#/components/schemas/OfferTerms' }
+        subscription:
+          type: object
+          description: Present once bidding has begun.
+          properties:
+            bidCount: { type: integer, examples: [490] }
+            distinctBidders: { type: integer, examples: [490] }
+            unitsBid: { type: integer, format: int64, examples: [980] }
+            fundsBlockedCount: { type: integer, examples: [490] }
+            oversubscriptionNumerator: { type: integer, format: int64, examples: [980] }
+            oversubscriptionDenominator: { type: integer, format: int64, examples: [475] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    CreateOfferRequest:
+      type: object
+      required: [schemeId, offerType, terms]
+      properties:
+        schemeId: { type: string, format: uuid }
+        offerType: { type: string, enum: [INITIAL, FOLLOW_ON] }
+        terms: { $ref: '#/components/schemas/OfferTerms' }
+
+    Readiness:
+      type: object
+      required: [currentStatus, canAdvance, blockers]
+      properties:
+        currentStatus: { $ref: '#/components/schemas/OfferStatus' }
+        nextExpected:
+          oneOf:
+            - $ref: '#/components/schemas/OfferStatus'
+            - type: 'null'
+          description: The next status on the happy path, or null at a terminal status.
+        canAdvance: { type: boolean }
+        blockers:
+          type: array
+          description: Unmet preconditions, in the domain's own words. Empty when `canAdvance` is true.
+          items: { type: string }
+          examples:
+            - ['3 bid(s) are still awaiting validation; freezing now would fix a book that is still changing']
+        paused: { type: boolean }
+
+    PlaceBidRequest:
+      type: object
+      required: [unitsBid, pricePerUnitPaise, dematAccountId, bankAccountId]
+      properties:
+        unitsBid: { type: integer, format: int32, minimum: 1, examples: [2] }
+        pricePerUnitPaise: { $ref: '#/components/schemas/Paise' }
+        dematAccountId:
+          type: string
+          format: uuid
+          description: Where allotted units are credited. Required before money is blocked for them.
+        bankAccountId: { type: string, format: uuid }
+
+    Bid:
+      type: object
+      required: [id, offerId, bidRef, unitsBid, pricePerUnitPaise, totalAmountPaise, status]
+      properties:
+        id: { type: string, format: uuid }
+        offerId: { type: string, format: uuid }
+        bidRef: { $ref: '#/components/schemas/BidRef' }
+        investorAnchor: { $ref: '#/components/schemas/Bytes32' }
+        unitsBid: { type: integer, format: int32, examples: [2] }
+        pricePerUnitPaise: { $ref: '#/components/schemas/Paise' }
+        totalAmountPaise: { $ref: '#/components/schemas/Paise' }
+        status:
+          type: string
+          description: Mirrors the `bid_status` database enum.
+          enum:
+            - SUBMITTED
+            - BLOCK_REQUESTED
+            - FUNDS_BLOCKED
+            - VALIDATED
+            - IN_BOOK
+            - ALLOTTED_FULL
+            - ALLOTTED_PARTIAL
+            - REJECTED_BALLOT
+            - REJECTED_TECHNICAL
+            - DEBIT_INSTRUCTED
+            - FUNDS_DEBITED
+            - UNITS_CREDITED
+            - ANCHORED
+            - UNBLOCK_REQUESTED
+            - FUNDS_UNBLOCKED
+        rejectionReason:
+          type: [string, 'null']
+          description: |
+            Set whenever the status is REJECTED_BALLOT or REJECTED_TECHNICAL, and only then. A rejected
+            bid keeps this status even after its funds are released, because the release is recorded on
+            the block rather than by moving the bid out of a state that carries the reason.
+          enum: [BALLOT_NOT_DRAWN, KYC_INVALID, KYC_EXPIRED, DEMAT_UNVERIFIED, ASBA_BLOCK_FAILED, BELOW_MIN_BID, ABOVE_MAX_BID, DUPLICATE_BID, OFFER_ABORTED, null]
+        block: { $ref: '#/components/schemas/AsbaBlock' }
+        allotment:
+          oneOf:
+            - $ref: '#/components/schemas/BidAllotment'
+            - type: 'null'
+          description: Present once the draw has run.
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    AsbaBlock:
+      type: object
+      description: |
+        Mirrors `asba.Block`. The money never leaves the investor's account: the bank marks it
+        unavailable and debits only the allotted portion. There is deliberately no house balance
+        anywhere in this API, because modelling one would model a custody arrangement AcreSync does not
+        have.
+      required: [status, requestedAmountPaise]
+      properties:
+        status: { $ref: '#/components/schemas/AsbaBlockStatus' }
+        requestedAmountPaise: { $ref: '#/components/schemas/Paise' }
+        blockedAmountPaise:
+          oneOf: [{ $ref: '#/components/schemas/Paise' }, { type: 'null' }]
+          description: Equal to the requested amount or absent. A partial block is never recorded.
+        debitedAmountPaise:
+          oneOf: [{ $ref: '#/components/schemas/Paise' }, { type: 'null' }]
+        releasedAmountPaise:
+          oneOf: [{ $ref: '#/components/schemas/Paise' }, { type: 'null' }]
+          description: |
+            Stored rather than derived. `debited + released == blocked` holds with no tolerance, and
+            recording both halves makes that provable from what was written.
+        failureCode: { type: [string, 'null'] }
+        blockedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+
+    BidAllotment:
+      type: object
+      required: [unitsAllotted, outcome, ballotRank, amountPayablePaise, refundAmountPaise]
+      properties:
+        unitsAllotted: { type: integer, format: int32, examples: [1] }
+        outcome: { $ref: '#/components/schemas/AllocationOutcome' }
+        ballotRank:
+          type: integer
+          format: int32
+          description: |
+            The bid's position in the draw. Recomputable by anyone from the published seed, the investor
+            anchor and the leaf index, which is what lets a losing bidder confirm their position was not
+            invented.
+          examples: [37]
+        amountPayablePaise: { $ref: '#/components/schemas/Paise' }
+        refundAmountPaise: { $ref: '#/components/schemas/Paise' }
+
+    PublishedAllotment:
+      type: object
+      description: One line of the published allotment file. Carries no identifiers.
+      required: [leafIndex, investorAnchor, unitsAllotted, outcome, ballotRank]
+      properties:
+        leafIndex: { type: integer, format: int32 }
+        investorAnchor: { $ref: '#/components/schemas/Bytes32' }
+        unitsAllotted: { type: integer, format: int32 }
+        outcome: { $ref: '#/components/schemas/AllocationOutcome' }
+        ballotRank: { type: integer, format: int32 }
+
+    BallotCeremony:
+      type: object
+      required: [offerId, stage, attempt, maxAttempts]
+      properties:
+        offerId: { type: string, format: uuid }
+        stage: { $ref: '#/components/schemas/BallotStage' }
+        bidbookRoot: { oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }] }
+        bidbookCidDigest: { oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }] }
+        seedCommitment:
+          oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }]
+          description: SHA-256 of the secret. Immutable once set; a recommit reuses it.
+        targetBlock:
+          type: [integer, 'null']
+          format: int64
+          description: Chosen by the contract, never by the caller.
+        revealWindowBlocks: { type: integer, examples: [200] }
+        revealDeadlineBlock: { type: [integer, 'null'], format: int64 }
+        seedPlaintext:
+          oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }]
+          description: Absent until revealed. Its absence before the target block is the security property.
+        targetBlockHash: { oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }] }
+        finalSeed:
+          oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }]
+          description: SHA-256 over the secret, the target block hash and the bid book root.
+        resultRoot: { oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }] }
+        attempt:
+          type: integer
+          description: Commit attempts used, from 1. Capped at maxAttempts, after which a trustee escalates.
+          examples: [1]
+        maxAttempts: { type: integer, examples: [3] }
+        escalated: { type: boolean }
+
+    BookFreezeResult:
+      type: object
+      required: [offerId, merkleRoot, leafCount, totalUnitsBid, distinctBidders, frozenAt]
+      properties:
+        offerId: { type: string, format: uuid }
+        merkleRoot: { $ref: '#/components/schemas/Bytes32' }
+        leafCount: { type: integer, format: int32, examples: [490] }
+        totalUnitsBid: { type: integer, format: int64, examples: [980] }
+        distinctBidders: { type: integer, format: int32, examples: [490] }
+        frozenAt: { $ref: '#/components/schemas/Timestamp' }
+        feasibility:
+          type: object
+          properties:
+            feasible: { type: boolean }
+            subscriptionMet: { type: boolean }
+            holderFloorMet: { type: boolean }
+            fullSubscriptionMet: { type: boolean }
+            reasons:
+              type: array
+              items: { type: string }
+        document: { $ref: '#/components/schemas/PublishedDocument' }
+
+    DrawResult:
+      type: object
+      required: [offerId, finalSeed, bidbookRoot, resultRoot, unitsAllotted, distinctAllottees, algoVersion]
+      properties:
+        offerId: { type: string, format: uuid }
+        finalSeed: { $ref: '#/components/schemas/Bytes32' }
+        bidbookRoot: { $ref: '#/components/schemas/Bytes32' }
+        resultRoot: { $ref: '#/components/schemas/Bytes32' }
+        unitsAllotted: { type: integer, format: int32, examples: [475] }
+        distinctAllottees: { type: integer, format: int32, examples: [475] }
+        algoVersion:
+          type: integer
+          description: |
+            Version of the allocation rules. A verifier reproducing a historical allotment needs to know
+            which rules applied.
+          examples: [1]
+        outcomeCounts:
+          type: object
+          properties:
+            full: { type: integer, examples: [0] }
+            partial: { type: integer, examples: [475] }
+            nilBallot: { type: integer, examples: [15] }
+            nilTechnical: { type: integer, examples: [0] }
+        document: { $ref: '#/components/schemas/PublishedDocument' }
+
+    SettlementState:
+      type: object
+      required: [offerId, stage, expectedUnits, expectedHolders, creditedUnits, creditedHolders]
+      properties:
+        offerId: { type: string, format: uuid }
+        stage: { $ref: '#/components/schemas/SettlementStage' }
+        expectedUnits:
+          type: integer
+          format: int32
+          description: Public side only. The manager's units are credited outside the cursor.
+          examples: [475]
+        expectedHolders: { type: integer, format: int32, examples: [475] }
+        creditedUnits: { type: integer, format: int32, examples: [200] }
+        creditedHolders:
+          type: integer
+          format: int32
+          description: Also the cursor. The next batch must declare exactly this value as `cursorFrom`.
+          examples: [200]
+        allotmentFileHash: { $ref: '#/components/schemas/Bytes32' }
+        ballotResultRoot: { $ref: '#/components/schemas/Bytes32' }
+        imUnitsRecorded:
+          type: boolean
+          description: |
+            Whether the manager's subscription is on-chain. Easily forgotten because the manager never
+            bids, and without it the register is short by exactly its holding.
+        batches:
+          type: array
+          items:
+            type: object
+            properties:
+              cursorFrom: { type: integer, format: int32 }
+              cursorTo: { type: integer, format: int32 }
+              holderCount: { type: integer }
+              unitsPaise: { type: integer, format: int32 }
+              submitted: { type: boolean }
+        nextStep:
+          type: [string, 'null']
+          enum: [beginSettlement, settleBatch, finaliseSettlement, null]
+        finalisation:
+          type: object
+          properties:
+            ready: { type: boolean }
+            failures:
+              type: array
+              description: Every unmet invariant, not merely the first.
+              items: { type: string }
+
+    PublishedDocument:
+      type: object
+      required: [docType, digest]
+      properties:
+        docType:
+          type: string
+          enum: [BIDBOOK, ALLOTMENT_FILE, NDCF_STATEMENT, SNAPSHOT, VALUATION, OFFER_DOCUMENT]
+        digest:
+          allOf: [{ $ref: '#/components/schemas/Bytes32' }]
+          description: |
+            SHA-256 of the canonical document bytes. This is the commitment anchored on-chain. Verify by
+            fetching the bytes and hashing them.
+        cid:
+          type: [string, 'null']
+          description: IPFS address. A locator only, never the commitment.
+          examples: ['bafkreieq5jui4j25lacwomsqgjeswwl3y5zcdrresptwgmfylxo2depppq']
+        gatewayUrl: { type: [string, 'null'], format: uri }
+        byteSize: { type: [integer, 'null'] }
+        singleBlock:
+          type: [boolean, 'null']
+          description: |
+            Whether the document fits one raw IPFS block. Above that a provider chunks it and the root
+            block's digest is no longer the document's digest.
+        codecVerified: { type: [boolean, 'null'] }
+        anchoredTx: { type: [string, 'null'] }
+        anchorConfirmations: { type: [integer, 'null'] }
+
+    InclusionProof:
+      type: object
+      required: [leafIndex, leaf, proof, root, verified]
+      properties:
+        leafIndex: { type: integer, format: int32 }
+        leaf: { $ref: '#/components/schemas/Bytes32' }
+        proof:
+          type: array
+          description: Sibling digests from leaf to root. Fold with SHA-256, ordering each pair by value.
+          items: { $ref: '#/components/schemas/Bytes32' }
+        root: { $ref: '#/components/schemas/Bytes32' }
+        verified:
+          type: boolean
+          description: |
+            Whether AcreSync's own recomputation succeeds. A convenience, not evidence: the point of the
+            proof is that a verifier checks it themselves against the root anchored on-chain.
+        anchoredTx: { type: [string, 'null'] }
+        preimage:
+          type: object
+          description: The fields hashed to form the leaf, so a verifier can rebuild it without guessing.
+          additionalProperties: true
+
+    Period:
+      type: object
+      required: [id, schemeId, periodSeq, periodStart, periodEnd, status]
+      properties:
+        id: { type: string, format: uuid }
+        schemeId: { type: string, format: uuid }
+        periodSeq: { type: integer, examples: [1] }
+        periodStart: { type: string, format: date, examples: ['2026-07-01'] }
+        periodEnd: { type: string, format: date, examples: ['2026-09-30'] }
+        recordDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/PeriodStatus' }
+        snapshot:
+          type: object
+          description: Present once the register is frozen for the period.
+          properties:
+            merkleRoot: { $ref: '#/components/schemas/Bytes32' }
+            totalUnits:
+              type: integer
+              format: int32
+              description: The entitlement denominator. All units, manager included.
+              examples: [500]
+            distinctHolders:
+              type: integer
+              format: int32
+              description: Statutory count, excluding the manager.
+              examples: [475]
+            lineCount:
+              type: integer
+              description: Register lines. Exceeds distinctHolders by the excluded manager.
+              examples: [476]
+            takenAt: { $ref: '#/components/schemas/Timestamp' }
+
+    NdcfStatement:
+      type: object
+      required: [periodId, currency, ndcfPaise, distributedPaise, floorBps, distributionBps, lineItems]
+      properties:
+        periodId: { type: string, format: uuid }
+        currency: { type: string, enum: [INR] }
+        ndcfPaise: { $ref: '#/components/schemas/Paise' }
+        totalInflowPaise: { $ref: '#/components/schemas/Paise' }
+        totalOutflowPaise: { $ref: '#/components/schemas/Paise' }
+        reservePaise: { $ref: '#/components/schemas/Paise' }
+        feePaise: { $ref: '#/components/schemas/Paise' }
+        minimumDistributablePaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          description: |
+            The 95% floor applied to NDCF, rounded up. Rounding down would fall short by a paise whenever
+            the division is inexact, and then fail the floor by exactly that paise.
+        distributedPaise: { $ref: '#/components/schemas/Paise' }
+        floorBps: { type: integer, examples: [9500] }
+        distributionBps:
+          type: integer
+          description: |
+            Achieved ratio. Compared against the floor by cross-multiplication rather than by computing a
+            percentage, because multiplying the distributed amount by 10000 would overflow.
+          examples: [9500]
+        statementDigest: { $ref: '#/components/schemas/Bytes32' }
+        lineItems:
+          type: array
+          items:
+            type: object
+            required: [lineType, direction, amountPaise]
+            properties:
+              lineType: { $ref: '#/components/schemas/NdcfLineType' }
+              direction: { $ref: '#/components/schemas/NdcfDirection' }
+              amountPaise: { $ref: '#/components/schemas/Paise' }
+              spvRef: { type: [string, 'null'], format: uuid }
+              propertyRef: { type: [string, 'null'], format: uuid }
+              evidenceHash: { $ref: '#/components/schemas/Bytes32' }
+        document: { $ref: '#/components/schemas/PublishedDocument' }
+
+    Me:
+      type: object
+      required: [investorId, investorClass, kycStatus]
+      properties:
+        investorId: { type: string, format: uuid }
+        displayName: { type: string, examples: ['A. Investor'] }
+        investorClass: { $ref: '#/components/schemas/InvestorClass' }
+        kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED, EXPIRED] }
+        panMasked:
+          type: [string, 'null']
+          description: Last four characters only. The full value is never returned by this API.
+          examples: ['XXXXX1234F']
+        walletAddress: { oneOf: [{ $ref: '#/components/schemas/Address' }, { type: 'null' }] }
+        dematAccounts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              depository: { type: string, enum: [NSDL, CDSL] }
+              maskedClientId: { type: string, examples: ['****4821'] }
+              verified: { type: boolean }
+        bankAccounts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              ifsc: { type: string, examples: ['HDFC0001234'] }
+              maskedAccountNumber: { type: string, examples: ['****3310'] }
+              verified: { type: boolean }
+
+    Holding:
+      type: object
+      required: [schemeId, units]
+      properties:
+        schemeId: { type: string, format: uuid }
+        schemeName: { type: string }
+        walletAddress: { $ref: '#/components/schemas/Address' }
+        units: { type: integer, format: int32, examples: [2] }
+        excludedFromHolderCount:
+          type: boolean
+          description: |
+            True only for the investment manager. Excluded from the statutory holder count, not from the
+            distribution: the entitlement denominator is all units.
+        lockInExpiresAt:
+          oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }]
+          description: Null until listing. The manager's two-year hold runs from listing, not subscription.
+        firstCreditedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    MyEntitlement:
+      type: object
+      required: [periodId, units, grossPaise, netPayablePaise]
+      properties:
+        periodId: { type: string, format: uuid }
+        periodEnd: { type: string, format: date }
+        leafIndex: { type: integer, format: int32 }
+        units: { type: integer, format: int32, examples: [2] }
+        snapshotTotalUnits: { type: integer, format: int32, examples: [500] }
+        grossPaise:
+          allOf: [{ $ref: '#/components/schemas/Paise' }]
+          description: Units divided by the snapshot total, times the distributed amount.
+        tax:
+          type: object
+          properties:
+            investorClass: { $ref: '#/components/schemas/InvestorClass' }
+            section: { type: string, examples: ['194LBA'] }
+            rateBps: { type: integer, examples: [1000] }
+            amountPaise: { $ref: '#/components/schemas/Paise' }
+            form15GHOnFile: { type: boolean }
+        netPayablePaise: { $ref: '#/components/schemas/Paise' }
+        payable:
+          type: boolean
+          description: |
+            False when the amount is below the provider's minimum. An amount between 1 and 99 paise is
+            storable and unpayable, and carries forward rather than being silently dropped.
+        payout:
+          oneOf:
+            - $ref: '#/components/schemas/Payout'
+            - type: 'null'
+
+    Payout:
+      type: object
+      required: [id, amountPaise, status]
+      properties:
+        id: { type: string, format: uuid }
+        periodId: { type: string, format: uuid }
+        amountPaise: { $ref: '#/components/schemas/Paise' }
+        status: { $ref: '#/components/schemas/PayoutStatus' }
+        utr:
+          type: [string, 'null']
+          description: The bank's transaction reference, once settled.
+        settledAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        failureCode: { type: [string, 'null'] }
+        attempt:
+          type: integer
+          description: |
+            Incremented only on a reissue, never on a retry. A retry of the same instruction must reuse
+            its key so it cannot double-pay.
+          examples: [0]
+        provider: { type: string, enum: [MOCK, RAZORPAYX_SANDBOX] }
+        simulated:
+          type: boolean
+          description: True whenever the provider is MOCK. Surfaced so a demo can never be mistaken for a payment.
+
+    Reconciliation:
+      type: object
+      required: [periodId, status, depositoryTotalUnits, chainTotalUnits, blocksPayout]
+      properties:
+        periodId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ReconciliationStatus' }
+        depositoryTotalUnits: { type: integer, format: int32 }
+        chainTotalUnits: { type: integer, format: int32 }
+        depositoryHolderCount: { type: integer }
+        chainHolderCount: { type: integer }
+        blocksPayout:
+          type: boolean
+          description: |
+            When true the database itself refuses to instruct payouts. Paying against a register known to
+            be wrong is the one failure that cannot be corrected afterwards.
+        diffs:
+          type: array
+          items:
+            type: object
+            properties:
+              walletAddress: { $ref: '#/components/schemas/Address' }
+              depositoryUnits: { type: integer, format: int32 }
+              chainUnits: { type: integer, format: int32 }
+              diffUnits: { type: integer, format: int64 }
+
+    OutboxEntry:
+      type: object
+      required: [id, functionName, status, environmentTag]
+      properties:
+        id: { type: string, format: uuid }
+        targetContract: { $ref: '#/components/schemas/Address' }
+        functionName: { type: string, examples: ['anchorBidbook'] }
+        status: { $ref: '#/components/schemas/OutboxStatus' }
+        nonce: { type: [integer, 'null'], format: int64 }
+        txHash: { type: [string, 'null'] }
+        blockNumber: { type: [integer, 'null'], format: int64 }
+        confirmations: { type: integer }
+        attempts: { type: integer }
+        lastError: { type: [string, 'null'] }
+        environmentTag: { type: string, enum: [LOCAL, SEPOLIA_SIM] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }

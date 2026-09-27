@@ -56,6 +56,11 @@ const (
 	Outflow Direction = "OUTFLOW"
 )
 
+// AllDirections lists both directions.
+func AllDirections() []Direction {
+	return []Direction{Inflow, Outflow}
+}
+
 var ErrUnknownLineType = errors.New("ndcf: unknown line type")
 
 // directions maps each line type to its fixed direction.

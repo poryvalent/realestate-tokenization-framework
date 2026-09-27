@@ -14,6 +14,11 @@ const (
 	ReconResolved ReconciliationStatus = "RESOLVED"
 )
 
+// AllReconciliationStatuses lists every reconciliation outcome.
+func AllReconciliationStatuses() []ReconciliationStatus {
+	return []ReconciliationStatus{ReconMatched, ReconDiverged, ReconResolved}
+}
+
 // Position is one holder's unit count according to one source.
 type Position struct {
 	InvestorID    string
@@ -46,10 +51,10 @@ func (d Diff) FavoursDepository() bool { return d.DiffUnits > 0 }
 type Reconciliation struct {
 	Status ReconciliationStatus
 
-	DepositoryTotalUnits   uint32
-	ChainTotalUnits        uint32
-	DepositoryHolderCount  int
-	ChainHolderCount       int
+	DepositoryTotalUnits  uint32
+	ChainTotalUnits       uint32
+	DepositoryHolderCount int
+	ChainHolderCount      int
 
 	Diffs []Diff
 

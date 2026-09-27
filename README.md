@@ -23,10 +23,11 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M5 | IPFS pinning, NDCF, snapshots, entitlements, payouts | Complete |
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
 | M7 | Divergence detection and reversal | Not started |
+| — | HTTP API | Contract defined, handlers not written |
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**796 Go tests, 131 Solidity tests, `go vet` clean.**
+**809 Go tests, 131 Solidity tests, `go vet` clean.**
 
 ## Deployed on Sepolia (chain 11155111)
 
@@ -86,10 +87,29 @@ Stated plainly, because the distinction is the first thing anyone doing diligenc
 ```
 contracts/      Solidity sources, tests, deploy script (Foundry)
 db/migrations/  12 forward-only SQL migrations
-orchestrator/   Go services: 26 internal packages plus cmd tools
+docs/api/       HTTP API contract (OpenAPI) and the frontend guide
 docs/           Runbooks
+orchestrator/   Go services: 27 internal packages plus cmd tools
 tools/          WSL wrappers for Foundry
 ```
+
+## The API
+
+[`docs/api/openapi.yaml`](docs/api/openapi.yaml) is the HTTP contract, with
+[`docs/api/README.md`](docs/api/README.md) as the guide for whoever builds the UI.
+
+**The contract exists; the server does not yet.** No HTTP layer is implemented — the only outbound HTTP
+in the repository is the Pinata and RazorpayX clients. The contract was published first so the frontend
+can be built against a mock while the handlers are written behind it:
+
+```bash
+npx @stoplight/prism-cli mock docs/api/openapi.yaml --port 4010
+curl http://127.0.0.1:4010/schemes
+```
+
+Every schema is derived from a Go type that already passes tests, and
+`internal/apicontract` fails the build if the two ever diverge — including a same-set reordering of
+`AllocationOutcome`, whose positions are part of a hashed leaf.
 
 The Go orchestrator is the sole authorised relayer. Every chain call goes through a transactional outbox
 with an idempotency key, so a dropped connection cannot double-anchor.
@@ -140,7 +160,7 @@ go test ./... -count=1
 ```
 
 Without a database the suite still passes, but 26 tests skip rather than fail, so check the
-count: **796 passing, 0 skipped** is a complete run.
+count: **809 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env

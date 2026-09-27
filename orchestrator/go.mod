@@ -7,6 +7,7 @@ require (
 	github.com/ipfs/go-cid v0.6.2
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/multiformats/go-multihash v0.2.3
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
