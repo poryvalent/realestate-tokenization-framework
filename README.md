@@ -125,13 +125,22 @@ With Postgres, which also runs the end-to-end offer-to-cap-table test:
 docker run -d --name acresync-db -p 55432:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=acresync postgres:16
 
+# Create the three roles migration 0009 expects. Required once on plain Postgres;
+# unnecessary on Supabase, where they already exist. Skipping this fails at 0009
+# with 'role "anon" does not exist'.
+docker cp db/bootstrap-roles.sql acresync-db:/tmp/
+docker exec acresync-db psql -U postgres -d acresync -v ON_ERROR_STOP=1 -f /tmp/bootstrap-roles.sql
+
 cd orchestrator
 export ACRESYNC_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:55432/acresync"
-go build -o bin/migrate ./cmd/migrate && ./bin/migrate -action up
+go build -o bin/migrate ./cmd/migrate && ./bin/migrate -action up   # expect: applied 12
 
 export ACRESYNC_TEST_DATABASE_URL="$ACRESYNC_DATABASE_URL"
 go test ./... -count=1
 ```
+
+Without a database the suite still passes, but 26 tests skip rather than fail, so check the
+count: **796 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env
