@@ -68,6 +68,123 @@ security:
   - investorAuth: []
 
 paths:
+  # ------------------------------------------------------------------ auth ----
+
+  /auth/session:
+    post:
+      tags: [investor]
+      security: []
+      operationId: createSession
+      summary: Exchange a Web3Auth token for an AcreSync session.
+      description: |
+        Standard OIDC verification rather than bespoke session handling. The backend validates the
+        Web3Auth JWT against their JWKS endpoint, maps the subject to an investor, and issues its own
+        short-lived token. In development the JWKS is a local RSA key pair.
+
+        Two identities are deliberately kept apart. Web3Auth establishes *who is calling*; the investor
+        record establishes *what they hold*. Conflating them would mean a change of login provider
+        rewrote the register.
+
+        Against the mock, any non-empty `idToken` returns a fixed test session.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken:
+                  type: string
+                  description: The Web3Auth-issued JWT.
+      responses:
+        '200':
+          description: A session.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, expiresAt, investorId]
+                properties:
+                  accessToken:
+                    type: string
+                    description: >-
+                      Send as an `Authorization` bearer header on investor endpoints.
+                  expiresAt: { $ref: '#/components/schemas/Timestamp' }
+                  investorId:
+                    type: string
+                    format: uuid
+                    description: |
+                      The internal investor identifier. A UUID, because that is what the register uses.
+                    examples: ['1e7d4c6a-0000-4000-8000-000000000001']
+                  kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED, EXPIRED] }
+        '401':
+          description: The Web3Auth token is missing, expired or fails signature verification.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  # ------------------------------------------------------------- documents ----
+
+  /documents/presign:
+    post:
+      tags: [investor]
+      operationId: presignDocument
+      summary: Get a direct upload URL for a document.
+      description: |
+        Binary content never passes through the API. The client is issued a URL, uploads straight to
+        storage, and then hands the returned `documentId` to whichever business call needs it.
+
+        Keeping blobs out of the request path matters because the pipeline that consumes them anchors
+        digests on-chain. A multi-megabyte upload sharing a connection with a transaction submission adds
+        a failure mode with no upside, and a retry of a business call must not re-upload a file.
+
+        `publicHash` is SHA-256 of the bytes the client is about to upload, supplied by the client and
+        re-checked on receipt. It is the value that ends up anchored, so a mismatch rejects the upload
+        rather than silently anchoring a digest of something else.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, mimeType, purpose]
+              properties:
+                filename: { type: string, examples: ['valuation-q2-2026.pdf'] }
+                mimeType: { type: string, examples: ['application/pdf'] }
+                purpose: { $ref: '#/components/schemas/DocumentPurpose' }
+                byteSize: { type: integer }
+                publicHash:
+                  oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }]
+                  description: SHA-256 the client computed locally. Re-verified server side.
+      responses:
+        '201':
+          description: An upload intent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documentId, uploadUrl, expiresAt]
+                properties:
+                  documentId:
+                    type: string
+                    format: uuid
+                    description: Pass this to the business call that consumes the document.
+                  uploadUrl:
+                    type: string
+                    format: uri
+                    description: |
+                      Upload the bytes here with PUT. In local development this is a small multipart
+                      handler rather than object storage.
+                  expiresAt: { $ref: '#/components/schemas/Timestamp' }
+                  publicHash: { oneOf: [{ $ref: '#/components/schemas/Bytes32' }, { type: 'null' }] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
   # ---------------------------------------------------------------- public ----
 
   /schemes:
@@ -507,12 +624,17 @@ paths:
         status and a list of unmet preconditions in the domain's own words.
       parameters:
         - $ref: '#/components/parameters/OfferId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/MockRole'
       responses:
         '200':
           description: Readiness.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Readiness' }
+        '304': { $ref: '#/components/responses/NotModified' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -813,8 +935,20 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Operator token. Roles mirror the on-chain roles, so an action the chain would refuse is refused
-        here too rather than being attempted and reverting.
+        Operator token carrying a `role` claim of `MANAGER`, `TRUSTEE` or `COMPLIANCE`.
+
+        One scheme rather than three, with the boundary enforced from the claim in middleware. Modelling
+        each role as a separate security scheme would suggest three credentials exist when there is one
+        token with a claim, and the frontend would end up juggling key sets to represent something the
+        backend does not have.
+
+        Roles mirror the on-chain roles, so an action the chain would refuse is refused here rather than
+        attempted and reverted. Where a step requires a second party, such as trustee approval of a
+        distribution, that is a role boundary and not a permission level: the manager cannot satisfy it by
+        being more privileged.
+
+        Against the mock, send `X-Mock-Role: TRUSTEE` to act as a different persona without separate
+        tokens.
 
   parameters:
     SchemeId:
@@ -842,6 +976,25 @@ components:
       in: query
       description: Opaque cursor from the previous response's `nextCursor`.
       schema: { type: string }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |
+        The `ETag` from the previous response. When the state has not changed the server answers `304` with
+        no body, which is what makes a 3-second poll cheap.
+
+        Required for a 304 to be meaningful: an unconditional request cannot receive one, so a poller that
+        omits this header simply gets the full body every time.
+      schema: { type: string }
+    MockRole:
+      name: X-Mock-Role
+      in: header
+      required: false
+      description: |
+        Mock and development only. Impersonates an operator role without issuing separate tokens. Ignored
+        by any deployed environment.
+      schema: { type: string, enum: [MANAGER, TRUSTEE, COMPLIANCE] }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -857,6 +1010,11 @@ components:
     IdempotencyReplayed:
       description: Present and true when this response was replayed from a previous identical request.
       schema: { type: boolean }
+    ETag:
+      description: |
+        Opaque state version. Send it back as `If-None-Match` while polling to receive `304` until
+        something actually changes.
+      schema: { type: string }
 
   responses:
     NotFound:
@@ -894,6 +1052,12 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotModified:
+      description: |
+        Nothing has changed since the `ETag` supplied in `If-None-Match`. No body. This is the normal
+        answer to most polls.
+      headers:
+        ETag: { $ref: '#/components/headers/ETag' }
     BadRequest:
       description: Malformed parameters, such as an unparseable cursor or an out-of-range limit.
       content:
@@ -927,6 +1091,11 @@ components:
       pattern: '^0x[0-9a-f]{40}$'
       description: An Ethereum address, lowercase.
       examples: ['0xf858a002402e968d1c7ec62c3824d30520e9ca38']
+
+    DocumentPurpose:
+      type: string
+      description: What a presigned upload is for. Determines where it is filed and whether it is anchored.
+      enum: [KYC, VALUATION_REPORT, OFFER_DOCUMENT, TRUSTEE_ESCROW, RENT_EVIDENCE, OTHER]
 
     BidRef:
       type: string

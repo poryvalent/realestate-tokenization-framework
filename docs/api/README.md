@@ -239,15 +239,74 @@ means it does not count toward the statutory 200. It still receives its share.
 Internal identifiers such as `investorId` and `bidId` are not published on public endpoints and should
 not be shown to other users.
 
-## Open questions for us to settle
+## Decided
 
-Worth agreeing before you build the relevant screens, rather than after:
+These were open. They are not any more.
 
-1. **Auth handshake.** Web3Auth is in the config but the token exchange is not designed. Affects login.
-2. **Realtime.** A ballot reveal and a settlement batch both change state while an operator watches.
-   Polling is assumed for now; websockets or SSE would be nicer and would change your data layer.
-3. **File uploads.** Valuation reports and KYC documents have no endpoint yet.
-4. **Operator roles.** `operatorAuth` is one scheme today; manager, trustee and compliance probably need
-   different permissions, which affects which controls you render.
+### Login
 
-Raise anything that blocks a screen and it gets decided rather than guessed.
+`POST /auth/session` with `{ idToken }`, the Web3Auth JWT. The backend verifies it against Web3Auth's
+JWKS, maps the subject to an investor, and returns its own token:
+
+```json
+{ "accessToken": "...", "expiresAt": "2026-05-09T12:00:00Z", "investorId": "1e7d4c6a-...", "kycStatus": "VERIFIED" }
+```
+
+Send that as `Authorization: Bearer <accessToken>` on investor endpoints. Against the mock, any non-empty
+`idToken` returns a fixed test session.
+
+Two identities stay separate on purpose: Web3Auth says who is calling, the investor record says what they
+hold. If they were one thing, changing login provider would rewrite the register.
+
+### Polling, not sockets
+
+Poll every 3 seconds while an operation is in flight. Sepolia blocks are ~12 seconds and these are
+sequential state-machine transitions, so sockets would add reconnect logic and proxy overhead for no
+visible gain.
+
+Use conditional requests so a poll is nearly free:
+
+```ts
+const res = await fetch(url, { headers: etag ? { 'If-None-Match': etag } : {} });
+if (res.status === 304) return prev;          // nothing changed
+etag = res.headers.get('ETag');
+return res.json();
+```
+
+**A `304` only happens if you send `If-None-Match`.** Without it you get the full body every time — the
+polling is still correct, just wasteful. `ETag` is returned on the pollable endpoints; `/readiness` is the
+one to watch during the ballot and settlement.
+
+### Uploads
+
+Two steps, and binary never touches the API.
+
+1. `POST /documents/presign` with `{ filename, mimeType, purpose }` → `{ documentId, uploadUrl, expiresAt }`
+2. `PUT` the bytes straight to `uploadUrl`, then pass `documentId` into the business call that needs it.
+
+Send `publicHash`, SHA-256 of the bytes, if you can compute it client-side. It is re-checked on receipt and
+it is the value that gets anchored, so a mismatch rejects the upload rather than anchoring a digest of
+something else.
+
+Locally `uploadUrl` points at a small multipart handler rather than object storage, so the flow is the same
+in development.
+
+### Operator roles
+
+One token with a `role` claim of `MANAGER`, `TRUSTEE` or `COMPLIANCE`, enforced in middleware. Not three
+security schemes, because there is one credential and pretending otherwise would have you juggling key
+sets to represent something the backend does not have.
+
+Against the mock, `X-Mock-Role: TRUSTEE` switches persona.
+
+Worth understanding for the UI: some boundaries are **separation of duties, not privilege**. Trustee
+approval of a distribution is a second party signing, and the manager cannot satisfy it by being more
+senior. So render those as "awaiting trustee", never as "you lack permission".
+
+Rough split: `MANAGER` drives the lifecycle (create offers, freeze, ballot, settle), `TRUSTEE` approves and
+can escalate an abandoned ballot, `COMPLIANCE` reads everything and signs off. Exact per-endpoint mapping
+lands with the handlers; if a screen needs it sooner, ask.
+
+## Still to settle
+
+Nothing blocking. Raise anything that stops a screen and it gets decided rather than guessed.

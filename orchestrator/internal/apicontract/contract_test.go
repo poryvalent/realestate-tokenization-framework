@@ -363,10 +363,17 @@ func TestEveryDomainEnumIsCovered(t *testing.T) {
 
 	// Enums that are API-only vocabulary with no single Go counterpart. Listed explicitly so adding a
 	// new enum forces a decision rather than defaulting to unchecked.
+	//
+	// This list earned its keep immediately: adding DocumentPurpose to the contract failed this test
+	// until it was accounted for here, which is the behaviour intended.
 	apiOnly := map[string]bool{
 		"SettlementStage": true, // mirrors a Solidity enum, not a Go string type
 		"OutboxStatus":    true,
-		"BidRef":          false,
+
+		// Upload intents are a transport concern. The purpose decides where a document is filed and
+		// whether its digest is anchored, but no Go type enumerates it yet; when the handlers add one,
+		// move this entry up into `pinned`.
+		"DocumentPurpose": true,
 	}
 
 	var unaccounted []string
