@@ -842,6 +842,13 @@ func TestConformanceCoversEveryWiredPublicEndpoint(t *testing.T) {
 		"GET /v1/offers/{offerId}",
 		"GET /v1/schemes/{schemeId}/periods",
 		"GET /v1/periods/{periodId}",
+
+		// The authenticated investor surface.
+		"GET /v1/me",
+		"GET /v1/me/holdings",
+		"GET /v1/me/entitlements",
+		"GET /v1/me/payouts",
+		"GET /v1/me/bids",
 	}
 
 	// Each one must be described by the contract too, otherwise the server is serving something unpublished.
@@ -865,5 +872,110 @@ func TestConformanceCoversEveryWiredPublicEndpoint(t *testing.T) {
 		if _, present := item[method]; !present {
 			t.Errorf("the server serves %s but the contract declares no %s on %q", route, method, template)
 		}
+	}
+}
+
+// TestInvestorResponsesConformToContract extends the conformance check to the authenticated surface.
+//
+// These payloads are the ones a unitholder sees about their own money, so a field named differently from the
+// contract is a field the frontend will not render. The same validator is used, so the same twelve
+// self-tests vouch for it.
+func TestInvestorResponsesConformToContract(t *testing.T) {
+	doc := loadContract(t)
+	srv, ctx, tx := meServer(t)
+
+	schemeID := seedAPIScheme(t, ctx, tx)
+	offerID := seedAPIOffer(t, ctx, tx, schemeID)
+	investorID, demat, bank := seedAPIInvestor(t, ctx, tx)
+
+	seedAPIWallet(t, ctx, tx, investorID, "0xeeee000000000000000000000000000000000001", true)
+	seedAPIKYC(t, ctx, tx, investorID, "VERIFIED")
+	seedAPIHolding(t, ctx, tx, schemeID, investorID, "0xeeee000000000000000000000000000000000001", 2, false)
+	bidID := seedAPIBidFor(t, ctx, tx, offerID, investorID, demat, bank, 2)
+	seedAPIBlock(t, ctx, tx, bidID, 2*100000000, "BLOCKED")
+
+	token := investorToken(t, srv, investorID)
+
+	t.Run("Me", func(t *testing.T) {
+		rec := getAs(t, srv, "/v1/me", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d. body: %s", rec.Code, rec.Body.String())
+		}
+		v := assertConforms(t, doc, "Me", rec.Body.Bytes())
+		if len(v.undeclared) > 0 {
+			sort.Strings(v.undeclared)
+			t.Errorf("the profile carries fields the contract does not publish:\n  %s",
+				strings.Join(v.undeclared, "\n  "))
+		}
+	})
+
+	// The list endpoints are validated per item, because the envelope is not itself a published schema.
+	lists := []struct{ path, schema string }{
+		{"/v1/me/holdings", "Holding"},
+	}
+
+	for _, tc := range lists {
+		t.Run(tc.schema, func(t *testing.T) {
+			rec := getAs(t, srv, tc.path, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d. body: %s", rec.Code, rec.Body.String())
+			}
+
+			decoded, ok := decodeJSON(t, rec.Body.Bytes()).(map[string]any)
+			if !ok {
+				t.Fatal("the list response is not an object")
+			}
+			items, ok := decoded["items"].([]any)
+			if !ok {
+				t.Fatalf("items is %T", decoded["items"])
+			}
+			if len(items) == 0 {
+				t.Fatal("nothing to validate; the fixture did not appear")
+			}
+
+			v := &validator{doc: doc}
+			for i, item := range items {
+				v.check(t, fmt.Sprintf("items[%d]", i), item, schemaNamed(t, doc, tc.schema))
+			}
+			if len(v.violations) > 0 {
+				sort.Strings(v.violations)
+				t.Errorf("a %s does not satisfy the contract:\n  %s\n\nbody: %s",
+					tc.schema, strings.Join(v.violations, "\n  "), rec.Body.String())
+			}
+			if len(v.undeclared) > 0 {
+				sort.Strings(v.undeclared)
+				t.Errorf("a %s carries fields the contract does not publish:\n  %s",
+					tc.schema, strings.Join(v.undeclared, "\n  "))
+			}
+		})
+	}
+}
+
+// TestInvestorResponsesAreNeverCached is a property of every credentialled response.
+//
+// These are per-caller and carry an authenticated subject's financial position. A shared cache that keyed one
+// of them on the URL alone would serve one unitholder's holdings to another, which is the worst outcome this
+// API has available to it.
+func TestInvestorResponsesAreNeverCached(t *testing.T) {
+	srv, ctx, tx := meServer(t)
+	investorID, _, _ := seedAPIInvestor(t, ctx, tx)
+	token := investorToken(t, srv, investorID)
+
+	for _, path := range []string{"/v1/me", "/v1/me/holdings", "/v1/me/entitlements", "/v1/me/payouts", "/v1/me/bids"} {
+		t.Run(path, func(t *testing.T) {
+			rec := getAs(t, srv, path, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d. body: %s", rec.Code, rec.Body.String())
+			}
+
+			if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", cc)
+			}
+			// No ETag either. A conditional request on a per-caller resource invites a cache to key it on the
+			// URL and ignore the token.
+			if tag := rec.Header().Get("ETag"); tag != "" {
+				t.Errorf("ETag = %q on a credentialled response", tag)
+			}
+		})
 	}
 }

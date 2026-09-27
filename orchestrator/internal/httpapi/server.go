@@ -45,6 +45,9 @@ type Deps struct {
 
 	// Investors resolves an upstream subject to a register identity.
 	Investors InvestorResolver
+
+	// Me reads an authenticated investor's own records.
+	Me MeReader
 }
 
 // DefaultSessionTTL is how long a session lasts when none is configured.
@@ -144,6 +147,16 @@ func (s *Server) routes() http.Handler {
 	// endpoint cannot do its job, so it is absent rather than failing at request time.
 	if s.signer != nil && s.deps.IDTokens != nil && s.deps.Investors != nil {
 		mux.HandleFunc("POST /v1/auth/session", mutation(s.handleCreateSession))
+	}
+
+	// The investor surface. Gated on a signer as well as a reader: without a way to verify a token there is no
+	// authenticated caller, and every one of these endpoints is scoped to one.
+	if s.signer != nil && s.deps.Me != nil {
+		mux.HandleFunc("GET /v1/me", s.requireInvestor(s.handleGetMe))
+		mux.HandleFunc("GET /v1/me/holdings", s.requireInvestor(s.handleListMyHoldings))
+		mux.HandleFunc("GET /v1/me/entitlements", s.requireInvestor(s.handleListMyEntitlements))
+		mux.HandleFunc("GET /v1/me/payouts", s.requireInvestor(s.handleListMyPayouts))
+		mux.HandleFunc("GET /v1/me/bids", s.requireInvestor(s.handleListMyBids))
 	}
 
 	// An explicit catch-all, so an unknown path produces the contract's error envelope rather than
