@@ -27,7 +27,7 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**1075 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
+**1123 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
 issuance, distribution and correction are all built and tested end to end against Postgres.
 The HTTP API serves the public verification surface from that domain over real Postgres.
 
@@ -161,8 +161,8 @@ export ACRESYNC_TEST_DATABASE_URL="$ACRESYNC_DATABASE_URL"
 go test ./... -count=1
 ```
 
-Without a database the suite still passes, but 62 tests skip rather than fail, so check the
-count: **1075 passing, 0 skipped** is a complete run.
+Without a database the suite still passes, but tests that need one skip rather than fail, so check
+the count: **1123 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env
