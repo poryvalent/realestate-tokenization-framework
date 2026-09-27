@@ -25,6 +25,19 @@ var domainPackagesWithSentinels = []string{
 	"../bidbook",
 	"../settlement",
 	"../adjustment",
+	"../store",
+}
+
+// deliberatelyInternal names the sentinels that must reach the 500 fallback, with the reason.
+//
+// Not every error is an answer to the caller. Some mean the system is broken, and for those a redacted 500
+// is the correct response: the client can do nothing about it, and the message may name a column or carry
+// row content. Keeping them in an explicit list rather than just leaving them out of the table means a new
+// sentinel cannot land in the fallback by being forgotten, which is the failure the table was built to stop.
+var deliberatelyInternal = map[string]string{
+	"store: the database holds an enum value this build does not define": "" +
+		"the schema and the build disagree, which is an operational fault rather than anything the caller " +
+		"did; the message also names a column, which is not the caller's business",
 }
 
 // TestEveryDomainSentinelIsClassified is the reason errorClasses is a table.
@@ -49,16 +62,51 @@ func TestEveryDomainSentinelIsClassified(t *testing.T) {
 
 	var missing []string
 	for msg, name := range declared {
-		if !classified[msg] {
-			missing = append(missing, fmt.Sprintf("%s (%q)", name, msg))
+		if classified[msg] {
+			continue
 		}
+		if _, deliberate := deliberatelyInternal[msg]; deliberate {
+			continue
+		}
+		missing = append(missing, fmt.Sprintf("%s (%q)", name, msg))
 	}
 	sort.Strings(missing)
 
 	if len(missing) > 0 {
 		t.Errorf("%d domain sentinel(s) are not classified, so each one reaches a client as a bare 500:\n  %s\n\n"+
-			"Add them to errorClasses in errors.go with the status and contract code that describe what they mean.",
+			"Add them to errorClasses in errors.go with the status and contract code that describe what they mean, "+
+			"or to deliberatelyInternal with the reason a redacted 500 is correct.",
 			len(missing), strings.Join(missing, "\n  "))
+	}
+}
+
+// TestDeliberatelyInternalSentinelsBehaveThatWay checks the exemptions are honest.
+//
+// An entry in that list claims two things: the error really does reach the fallback, and its text does not
+// reach the client. Both are asserted, because an exemption that was wrong would be a silent hole in exactly
+// the check the list is carved out of.
+func TestDeliberatelyInternalSentinelsBehaveThatWay(t *testing.T) {
+	declared := scanSentinels(t)
+
+	for msg, reason := range deliberatelyInternal {
+		t.Run(msg, func(t *testing.T) {
+			if _, exists := declared[msg]; !exists {
+				t.Fatalf("deliberatelyInternal names %q, but no package declares it any more", msg)
+			}
+			if reason == "" {
+				t.Fatal("an exemption must record why a redacted 500 is the right answer")
+			}
+
+			// Wrapped, because that is how it reaches the HTTP layer.
+			status, code, out := classify(fmt.Errorf("loading the offer: %w", errors.New(msg)))
+
+			if status != http.StatusInternalServerError || code != CodeInternal {
+				t.Fatalf("expected the redacted fallback, got status=%d code=%s", status, code)
+			}
+			if out != "internal error" {
+				t.Fatalf("the message reached the client as %q; it must be redacted", out)
+			}
+		})
 	}
 }
 

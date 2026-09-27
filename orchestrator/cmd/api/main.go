@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/acresync/orchestrator/internal/clock"
 	"github.com/acresync/orchestrator/internal/config"
+	"github.com/acresync/orchestrator/internal/db"
 	"github.com/acresync/orchestrator/internal/httpapi"
+	"github.com/acresync/orchestrator/internal/store"
 )
 
 func main() {
@@ -40,21 +43,41 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// db.Open pings, so a bad connection string fails here rather than in the middle of the first request.
+	pool, err := db.Open(ctx, cfg.Database)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
 	srv := httpapi.New(httpapi.Deps{
-		Env:  cfg.Environment,
-		Wall: clock.Real(),
+		Env:     cfg.Environment,
+		Wall:    clock.Real(),
+		Schemes: store.NewSchemes(pool),
+		Offers:  store.NewOffers(pool),
+		Periods: store.NewPeriods(pool),
+		Ready:   pool.Ping,
 	}).HTTPServer(cfg.HTTPAddr)
 
-	// The listen error is delivered on a channel rather than logged and forgotten, so a failure to bind
-	// exits non-zero instead of leaving a process that looks healthy and serves nothing.
+	// Bound before the goroutine starts, so a failure to bind is returned from run rather than logged from
+	// somewhere else, and so "listening" is only ever printed after the socket is actually held. Using
+	// ListenAndServe instead would log the claim first and discover the conflict afterwards, which is
+	// precisely the wrong order when the thing you are debugging is a port conflict.
+	listener, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("listening",
+		"addr", listener.Addr().String(),
+		"env", string(cfg.Environment),
+		"basePath", "/v1")
+
+	// The serve error is delivered on a channel rather than logged and forgotten, so a failure exits
+	// non-zero instead of leaving a process that looks healthy and serves nothing.
 	listenErr := make(chan error, 1)
 	go func() {
-		slog.Info("listening",
-			"addr", cfg.HTTPAddr,
-			"env", string(cfg.Environment),
-			"basePath", "/v1")
-
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			listenErr <- err
 			return
 		}

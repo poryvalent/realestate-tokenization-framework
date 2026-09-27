@@ -21,6 +21,7 @@ import (
 	"github.com/acresync/orchestrator/internal/offer"
 	"github.com/acresync/orchestrator/internal/period"
 	"github.com/acresync/orchestrator/internal/settlement"
+	"github.com/acresync/orchestrator/internal/store"
 )
 
 // Error codes, matching the enum in the published contract exactly.
@@ -123,6 +124,10 @@ type classification struct {
 // most useful thing the system knows at the moment somebody most needs it. The code is what a client
 // branches on; the message is the domain's, verbatim.
 var errorClasses = []classification{
+	// A row that does not exist. Mapped here rather than translated in each handler, so a handler that
+	// forgets to check cannot turn a missing offer into a 500.
+	{store.ErrNotFound, http.StatusNotFound, CodeNotFound},
+
 	// A pause applies across every domain and is the most specific thing that can be said, so it is first.
 	{offer.ErrPaused, http.StatusLocked, CodePaused},
 	{period.ErrPaused, http.StatusLocked, CodePaused},
