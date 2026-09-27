@@ -31,21 +31,65 @@ type Deps struct {
 	// Ready reports whether dependencies are healthy, for the readiness probe. Optional: when nil the
 	// probe answers on process liveness alone rather than implying a check that is not happening.
 	Ready func(ctx context.Context) error
+
+	// SessionSecret signs AcreSync session tokens. When absent, no authenticated route is registered at
+	// all, so a missing key removes those endpoints rather than leaving them verifiable against nothing.
+	SessionSecret []byte
+
+	// SessionTTL bounds a session. Zero means DefaultSessionTTL.
+	SessionTTL time.Duration
+
+	// IDTokens verifies the upstream Web3Auth token presented to POST /auth/session. When nil the session
+	// endpoint is not registered, because there would be no way to establish who is calling.
+	IDTokens IDTokenVerifier
+
+	// Investors resolves an upstream subject to a register identity.
+	Investors InvestorResolver
 }
+
+// DefaultSessionTTL is how long a session lasts when none is configured.
+//
+// Short on purpose. These tokens carry no revocation list, so expiry is the only way a session ends, and the
+// window between losing a token and it becoming useless is exactly this long.
+const DefaultSessionTTL = 30 * time.Minute
 
 // Server holds the routed handler.
 type Server struct {
 	deps    Deps
 	handler http.Handler
+
+	// signer is nil when no session secret was supplied, which is what makes the authenticated routes
+	// absent rather than unprotected.
+	signer *signer
 }
 
 // New builds a server with its routes and middleware in place.
+//
+// A bad session secret is reported by leaving authentication unavailable rather than by panicking, so a
+// misconfigured deployment still serves the public verification surface. The condition is logged loudly,
+// because silently serving half an API is worse than either extreme if nobody notices.
 func New(deps Deps) *Server {
 	if deps.Wall == nil {
 		deps.Wall = clock.Real()
 	}
+	if deps.SessionTTL <= 0 {
+		deps.SessionTTL = DefaultSessionTTL
+	}
 
 	s := &Server{deps: deps}
+
+	if len(deps.SessionSecret) > 0 {
+		sg, err := newSigner(deps.SessionSecret)
+		if err != nil {
+			slog.Error("the session signing key was rejected, so authenticated endpoints are unavailable",
+				"err", err)
+		} else {
+			s.signer = sg
+		}
+	} else {
+		slog.Warn("no session signing key was supplied; authenticated endpoints are not registered")
+	}
+
 	s.handler = s.routes()
 	return s
 }
@@ -93,6 +137,13 @@ func (s *Server) routes() http.Handler {
 	}
 	if s.deps.Periods != nil {
 		mux.HandleFunc("GET /v1/periods/{periodId}", s.handleGetPeriod)
+	}
+
+	// The session exchange. Registered only with everything it needs: a way to verify the upstream token, a
+	// way to resolve the subject to an investor, and a key to sign with. Any of those missing and the
+	// endpoint cannot do its job, so it is absent rather than failing at request time.
+	if s.signer != nil && s.deps.IDTokens != nil && s.deps.Investors != nil {
+		mux.HandleFunc("POST /v1/auth/session", mutation(s.handleCreateSession))
 	}
 
 	// An explicit catch-all, so an unknown path produces the contract's error envelope rather than

@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Feature names a capability group whose credentials must be present and valid.
@@ -80,6 +81,19 @@ type Config struct {
 	Payouts  PayoutConfig
 	KYC      KYCConfig
 	Web3Auth Web3AuthConfig
+	API      APIConfig
+}
+
+// APIConfig configures the HTTP API's own credentials.
+type APIConfig struct {
+	// SessionSecret signs the session tokens this service issues and verifies. Absent means the
+	// authenticated endpoints are not served at all, which is the safe direction: an empty signing key must
+	// never be mistaken for a usable one, because a token signed with nothing is a token anybody can mint.
+	SessionSecret Secret
+
+	// SessionTTL bounds a session. These tokens carry no revocation list, so expiry is the only way a
+	// session ends and the default is deliberately short.
+	SessionTTL time.Duration
 }
 
 type DatabaseConfig struct {
@@ -197,6 +211,10 @@ func Load(required ...Feature) (*Config, error) {
 		Web3Auth: Web3AuthConfig{
 			ClientID: os.Getenv("ACRESYNC_WEB3AUTH_CLIENT_ID"),
 			Network:  getEnv("ACRESYNC_WEB3AUTH_NETWORK", "sapphire_devnet"),
+		},
+		API: APIConfig{
+			SessionSecret: Secret(os.Getenv("ACRESYNC_API_SESSION_SECRET")),
+			SessionTTL:    time.Duration(getEnvInt64("ACRESYNC_API_SESSION_TTL_SECONDS", 1800)) * time.Second,
 		},
 	}
 

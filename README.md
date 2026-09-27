@@ -23,11 +23,11 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M5 | IPFS pinning, NDCF, snapshots, entitlements, payouts | Complete |
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
 | M7 | Divergence resolution, period reversal, carry-forward adjustments | Complete |
-| — | HTTP API | Public verification endpoints live; investor and operator surfaces pending |
+| — | HTTP API | Public endpoints, session exchange, auth and mutation admission live; investor and operator surfaces pending |
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**1123 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
+**1290 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
 issuance, distribution and correction are all built and tested end to end against Postgres.
 The HTTP API serves the public verification surface from that domain over real Postgres.
 
@@ -162,7 +162,7 @@ go test ./... -count=1
 ```
 
 Without a database the suite still passes, but tests that need one skip rather than fail, so check
-the count: **1123 passing, 0 skipped** is a complete run.
+the count: **1290 passing, 0 skipped** is a complete run.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env

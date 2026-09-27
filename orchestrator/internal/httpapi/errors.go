@@ -128,6 +128,11 @@ var errorClasses = []classification{
 	// forgets to check cannot turn a missing offer into a 500.
 	{store.ErrNotFound, http.StatusNotFound, CodeNotFound},
 
+	// A verified login that holds nothing here. Forbidden rather than not-found: the caller and their
+	// credential are genuine, and what is absent is a relationship with the register. A 404 would suggest the
+	// endpoint is missing and a 401 would send them round a login loop that cannot succeed.
+	{store.ErrNoInvestorForIdentity, http.StatusForbidden, CodeForbidden},
+
 	// A pause applies across every domain and is the most specific thing that can be said, so it is first.
 	{offer.ErrPaused, http.StatusLocked, CodePaused},
 	{period.ErrPaused, http.StatusLocked, CodePaused},

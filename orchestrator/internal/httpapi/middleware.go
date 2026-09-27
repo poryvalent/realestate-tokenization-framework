@@ -16,6 +16,7 @@ type ctxKey int
 const (
 	ctxRequestID ctxKey = iota
 	ctxPrincipal
+	ctxIdempotencyKey
 )
 
 // requestIDFrom returns the request's identifier, or empty if unset.

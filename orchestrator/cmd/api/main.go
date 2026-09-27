@@ -7,12 +7,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/acresync/orchestrator/internal/clock"
 	"github.com/acresync/orchestrator/internal/config"
@@ -50,14 +52,32 @@ func run() error {
 	}
 	defer pool.Close()
 
-	srv := httpapi.New(httpapi.Deps{
-		Env:     cfg.Environment,
-		Wall:    clock.Real(),
-		Schemes: store.NewSchemes(pool),
-		Offers:  store.NewOffers(pool),
-		Periods: store.NewPeriods(pool),
-		Ready:   pool.Ping,
-	}).HTTPServer(cfg.HTTPAddr)
+	deps := httpapi.Deps{
+		Env:           cfg.Environment,
+		Wall:          clock.Real(),
+		Schemes:       store.NewSchemes(pool),
+		Offers:        store.NewOffers(pool),
+		Periods:       store.NewPeriods(pool),
+		Ready:         pool.Ping,
+		SessionSecret: []byte(cfg.API.SessionSecret.Reveal()),
+		SessionTTL:    cfg.API.SessionTTL,
+		Investors:     httpapi.InvestorsByWallet{Wallets: store.NewInvestors(pool)},
+	}
+
+	// The upstream verifier is attached only when a JWKS is configured. Without it POST /auth/session is not
+	// registered, which is better than registering an endpoint that cannot establish who is calling.
+	verifier, err := upstreamVerifier(cfg)
+	if err != nil {
+		return err
+	}
+	if verifier != nil {
+		deps.IDTokens = verifier
+	} else {
+		slog.Warn("no Web3Auth JWKS is configured, so the session endpoint is not served",
+			"hint", "set ACRESYNC_WEB3AUTH_JWKS_FILE and ACRESYNC_WEB3AUTH_CLIENT_ID")
+	}
+
+	srv := httpapi.New(deps).HTTPServer(cfg.HTTPAddr)
 
 	// Bound before the goroutine starts, so a failure to bind is returned from run rather than logged from
 	// somewhere else, and so "listening" is only ever printed after the socket is actually held. Using
@@ -105,4 +125,52 @@ func run() error {
 		slog.Info("stopped cleanly")
 		return nil
 	}
+}
+
+// upstreamVerifier builds the Web3Auth verifier, or nil when none is configured.
+//
+// The JWKS is read from a file rather than fetched at startup. Fetching would make the process fail to start
+// when a third party is unreachable, and it would need a refresh loop and a cache with its own failure modes.
+// A file is explicit, reviewable, and can be rotated by a deployment step that already exists. The cost is
+// that a key rotation needs a restart, which is the right trade for a document that changes rarely.
+func upstreamVerifier(cfg *config.Config) (httpapi.IDTokenVerifier, error) {
+	path := os.Getenv("ACRESYNC_WEB3AUTH_JWKS_FILE")
+	if path == "" {
+		return nil, nil
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		// A configured but unreadable JWKS is a hard failure, not a reason to serve without authentication.
+		// Degrading here would silently remove the investor surface in a deployment that expects it.
+		return nil, fmt.Errorf("reading the Web3Auth jwks at %s: %w", path, err)
+	}
+
+	keys, err := httpapi.ParseJWKS(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.Web3Auth.ClientID == "" {
+		// The audience check is what stops a token minted for another application authenticating here, so
+		// running without it is refused rather than warned about.
+		return nil, fmt.Errorf("%w: ACRESYNC_WEB3AUTH_CLIENT_ID is required when a jwks is configured, "+
+			"because without an audience a token issued for another application would be accepted",
+			config.ErrMissing)
+	}
+
+	return httpapi.Web3AuthVerifier{
+		Keys:     keys,
+		Issuer:   os.Getenv("ACRESYNC_WEB3AUTH_ISSUER"),
+		Audience: cfg.Web3Auth.ClientID,
+		// Wall time. A third party's token expiry has nothing to do with the simulated distribution timeline,
+		// so this reads the real clock through the sanctioned reader rather than business time.
+		Now: func() time.Time {
+			t, err := clock.Real().Now(context.Background())
+			if err != nil {
+				return time.Time{}
+			}
+			return t
+		},
+	}, nil
 }
