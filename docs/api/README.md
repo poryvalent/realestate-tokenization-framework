@@ -28,20 +28,43 @@ Consequences for you:
 
 ## Running the real backend
 
-LOCAL only, for now:
+LOCAL only, for now. Every command below must see the same environment, so put these in `.env`:
 
 ```bash
-cd orchestrator
-export ACRESYNC_ENVIRONMENT=LOCAL
-export ACRESYNC_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/acresync
-export ACRESYNC_API_SESSION_SECRET=$(openssl rand -base64 32)
-export ACRESYNC_ANCHOR_PEPPER_DEV=$(openssl rand -base64 32)   # the ballot needs it
-go run ./cmd/api                                               # http://127.0.0.1:8080/v1
-
-# There is no operator sign-in yet, so mint tokens (same env):
-go run ./cmd/devtoken -role MANAGER        # or TRUSTEE, COMPLIANCE
-go run ./cmd/devtoken -investor <uuid>
+ACRESYNC_ENVIRONMENT=LOCAL
+ACRESYNC_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/acresync
+ACRESYNC_API_SESSION_SECRET=<openssl rand -base64 32>   # at least 32 bytes, or auth is off
+ACRESYNC_ANCHOR_PEPPER_DEV=<openssl rand -base64 32>    # without it the ballot and settlement routes 404
+ACRESYNC_CHAIN_SIMULATED=true                           # no RPC key needed; see below
 ```
+
+Then, from `orchestrator/`, in three terminals:
+
+```bash
+go run ./cmd/api                    # http://127.0.0.1:8080/v1
+go run ./cmd/devconfirm -watch      # fakes the relayer: confirms queued chain calls after ~5s
+go run ./cmd/devseed                # once: demo scheme, 250 investors, an OPEN offer with 240 bids
+```
+
+`devseed` writes `orchestrator/var/devseed.json` with the scheme, the offer, and every investor id (240
+who have bid, 10 who have not, for placing a bid by hand). Mint tokens with:
+
+```bash
+go run ./cmd/devtoken -role MANAGER        # or TRUSTEE, COMPLIANCE
+go run ./cmd/devtoken -investor <investorId from devseed.json>
+```
+
+With `devconfirm -watch` running, the whole console flow is clickable: close → freeze → commit →
+reveal → draw → ALLOTMENT_FINALISED → begin settlement → three batches → finalise. Each step after the
+freeze returns `409 anchor_not_confirmed` for about five seconds, then succeeds on retry. That is the
+waiting state the UI should show. Afterwards, `GET /me/holdings` for a bidder shows their units.
+
+All of it is simulated and says so: `ACRESYNC_CHAIN_SIMULATED` makes block hashes predictable, so a draw
+run this way proves nothing about fairness, and `devconfirm` records confirmations for transactions that
+were never sent. It only touches schemes tagged `LOCAL`, which is how `devseed` creates them.
+
+Don't restart the API between bidding and settlement: the ASBA sandbox's funds blocks live in its memory.
+Run `devseed` again for a fresh offer (each run creates a new scheme).
 
 Every `POST` needs an `Idempotency-Key` header of 16 to 128 characters with no spaces. Retrying with the
 same key and body returns the original response with `Idempotency-Replayed: true`.

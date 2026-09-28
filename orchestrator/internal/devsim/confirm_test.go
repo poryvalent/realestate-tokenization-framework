@@ -1,0 +1,128 @@
+package devsim
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/acresync/orchestrator/internal/idempotency"
+	"github.com/acresync/orchestrator/internal/outbox"
+)
+
+func testTx(t *testing.T) (context.Context, pgx.Tx) {
+	t.Helper()
+	url := os.Getenv("ACRESYNC_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("no ACRESYNC_TEST_DATABASE_URL; skipping devsim integration tests")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	return ctx, tx
+}
+
+var seq int
+
+func scheme(t *testing.T, ctx context.Context, tx pgx.Tx, env string) string {
+	t.Helper()
+	seq++
+	var id string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO schemes (sebi_scheme_ref, name, asset_value_paise, unit_price_paise, total_units, im_units,
+		                     public_units, min_public_holders, chain_id, roles_address, ballot_address,
+		                     scheme_address, environment_tag)
+		VALUES ($1, 'devsim test', 50000000000, 100000000, 500, 25, 475, 200, 11155111,
+		        '0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222',
+		        '0x3333333333333333333333333333333333333333', $2::environment_tag)
+		RETURNING id`, fmt.Sprintf("DEVSIM/%d/%d", time.Now().UnixNano(), seq), env).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func enqueue(t *testing.T, ctx context.Context, tx pgx.Tx, schemeID, env, fn string) string {
+	t.Helper()
+	seq++
+	var k idempotency.Key
+	k = sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%d/%d", schemeID, fn, seq, time.Now().UnixNano())))
+	e, err := outbox.EnqueueWith(ctx, tx, outbox.NewEntry{
+		SchemeID: schemeID, TargetContract: "0x2222222222222222222222222222222222222222", FunctionName: fn,
+		Payload: []byte(`{}`), IdempotencyKey: k, EnvironmentTag: env,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e.ID
+}
+
+// TestConfirmOnlyTouchesLocalRows is the property that makes the faker safe to have in the repository.
+func TestConfirmOnlyTouchesLocalRows(t *testing.T) {
+	ctx, tx := testTx(t)
+	local := scheme(t, ctx, tx, "LOCAL")
+	real := scheme(t, ctx, tx, "SEPOLIA_SIM")
+	enqueue(t, ctx, tx, local, "LOCAL", "anchorBidbook")
+	enqueue(t, ctx, tx, local, "LOCAL", "commitSeed")
+	sepolia := enqueue(t, ctx, tx, real, "SEPOLIA_SIM", "anchorBidbook")
+
+	// Even when pointed straight at the Sepolia scheme, nothing is confirmed.
+	got, err := Confirm(ctx, tx, Options{Head: 1000, SchemeID: real})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("confirmed %v (%v) on a SEPOLIA_SIM scheme", got, err)
+	}
+
+	got, err = Confirm(ctx, tx, Options{Head: 1000, SchemeID: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].FunctionName != "anchorBidbook" || got[1].FunctionName != "commitSeed" {
+		t.Fatalf("confirmed %v, want both LOCAL rows oldest first", got)
+	}
+
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status::text FROM chain_outbox WHERE id = $1`, sepolia).Scan(&status); err != nil || status != "QUEUED" {
+		t.Fatalf("the Sepolia row is %s (%v), want QUEUED", status, err)
+	}
+
+	// The rows satisfy the schema's confirmation evidence, on distinct nonces, backdated for the ceremony.
+	var n, nonces int
+	var block int64
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*), count(DISTINCT nonce), max(block_number) FROM chain_outbox
+		 WHERE scheme_id = $1 AND status = 'CONFIRMED' AND confirmations >= 5 AND tx_hash IS NOT NULL`, local).
+		Scan(&n, &nonces, &block); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || nonces != 2 || block != 1000-Backdate {
+		t.Fatalf("%d confirmed rows on %d nonces at block %d, want 2 on 2 at %d", n, nonces, block, 1000-Backdate)
+	}
+
+	// Nothing left to do.
+	if again, err := Confirm(ctx, tx, Options{Head: 1000, SchemeID: local}); err != nil || len(again) != 0 {
+		t.Fatalf("a second pass confirmed %v (%v)", again, err)
+	}
+}
+
+// TestConfirmWaitsForMinAge lets a UI show its waiting state.
+func TestConfirmWaitsForMinAge(t *testing.T) {
+	ctx, tx := testTx(t)
+	local := scheme(t, ctx, tx, "LOCAL")
+	enqueue(t, ctx, tx, local, "LOCAL", "anchorBidbook")
+
+	if got, err := Confirm(ctx, tx, Options{Head: 1000, SchemeID: local, MinAge: time.Hour}); err != nil || len(got) != 0 {
+		t.Fatalf("confirmed %v (%v) before it was an hour old", got, err)
+	}
+}

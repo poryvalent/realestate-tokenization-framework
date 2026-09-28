@@ -206,7 +206,12 @@ export ACRESYNC_API_SESSION_SECRET=$(openssl rand -base64 32)
 export ACRESYNC_ANCHOR_PEPPER_DEV=$(openssl rand -base64 32)
 go run ./cmd/api                          # http://127.0.0.1:8080/v1
 go run ./cmd/devtoken -role MANAGER       # an operator token, LOCAL only
+go run ./cmd/devseed                      # demo scheme, investors, an open offer with 240 bids
+go run ./cmd/devconfirm -watch            # SIMULATED confirmations for LOCAL schemes only
 ```
+
+`ACRESYNC_CHAIN_SIMULATED=true` replaces the RPC with a predictable simulated chain, for demos without an
+RPC key. `docs/api/README.md` has the full walkthrough.
 
 With `ACRESYNC_CHAIN_RPC_URL` set, the API dials it read-only (no relayer key) for the block head and
 block hashes the reveal needs. Mock IPFS pins and uploads are written under `var/`.

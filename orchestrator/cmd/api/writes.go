@@ -62,16 +62,23 @@ func writeDeps(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, deps
 			"hint", "LOCAL uses ACRESYNC_ANCHOR_PEPPER_DEV; other environments need a KMS, which is not integrated")
 	}
 
-	if !cfg.Chain.RPCURL.IsZero() {
+	simulated := os.Getenv("ACRESYNC_CHAIN_SIMULATED") == "true"
+	switch {
+	case simulated && cfg.Environment != config.EnvLocal:
+		return closeAll, fmt.Errorf("ACRESYNC_CHAIN_SIMULATED is for LOCAL only; %s must read a real chain", cfg.Environment)
+	case simulated:
+		deps.Chain = chain.Simulated{}
+		slog.Warn("the chain is SIMULATED: block hashes are predictable, so a ballot drawn here proves nothing about fairness")
+	case !cfg.Chain.RPCURL.IsZero():
 		reader, err := chain.DialReader(ctx, cfg.Chain)
 		if err != nil {
 			return closeAll, err
 		}
 		closers = append(closers, reader.Close)
 		deps.Chain = reader
-	} else {
+	default:
 		slog.Warn("no chain RPC is configured, so revealSeed and recommitSeed are not served",
-			"hint", "set ACRESYNC_CHAIN_RPC_URL")
+			"hint", "set ACRESYNC_CHAIN_RPC_URL, or ACRESYNC_CHAIN_SIMULATED=true in LOCAL")
 	}
 
 	slog.Warn("funds blocks use the in-memory ASBA sandbox; a restart forgets them, and no real bank is involved")
