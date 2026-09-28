@@ -38,6 +38,8 @@ import (
 	"github.com/acresync/orchestrator/internal/clock"
 	"github.com/acresync/orchestrator/internal/config"
 	"github.com/acresync/orchestrator/internal/db"
+	"github.com/acresync/orchestrator/internal/devsim"
+	"github.com/acresync/orchestrator/internal/entitlement"
 	"github.com/acresync/orchestrator/internal/httpapi"
 )
 
@@ -52,15 +54,17 @@ type investor struct {
 }
 
 type manifest struct {
-	Warning       string     `json:"warning"`
-	SchemeID      string     `json:"schemeId"`
-	OfferID       string     `json:"offerId,omitempty"`
-	BusinessTime  time.Time  `json:"businessTime"`
-	ManagerID     string     `json:"investmentManagerInvestorId"`
-	ManagerWallet string     `json:"investmentManagerWallet"`
-	Bidders       []investor `json:"bidders"`
-	FreeInvestors []investor `json:"investorsWithoutBids"`
-	TokenHowTo    string     `json:"tokens"`
+	Warning       string      `json:"warning"`
+	Stage         string      `json:"stage"`
+	Period        *paidPeriod `json:"distributionPeriod,omitempty"`
+	SchemeID      string      `json:"schemeId"`
+	OfferID       string      `json:"offerId,omitempty"`
+	BusinessTime  time.Time   `json:"businessTime"`
+	ManagerID     string      `json:"investmentManagerInvestorId"`
+	ManagerWallet string      `json:"investmentManagerWallet"`
+	Bidders       []investor  `json:"bidders"`
+	FreeInvestors []investor  `json:"investorsWithoutBids"`
+	TokenHowTo    string      `json:"tokens"`
 }
 
 func main() {
@@ -80,7 +84,16 @@ func run() error {
 	bids := flag.Int("bids", 240, "of those, how many bid (0 creates no offer)")
 	units := flag.Int("units", 2, "units per bid (1 to 25)")
 	out := flag.String("out", "var/devseed.json", "where to write the manifest")
+	stage := flag.String("stage", "open", "how far to take it: open (offer open with bids), settled (ballot drawn "+
+		"and the register credited), paid (plus one closed distribution period with settled MOCK payouts)")
 	flag.Parse()
+
+	if *stage != "open" && *stage != "settled" && *stage != "paid" {
+		return errors.New("-stage must be open, settled or paid")
+	}
+	if *stage != "open" && *bids < 200 {
+		return errors.New("-stage settled and paid need at least 200 bids, or the offer cannot meet its holder floor")
+	}
 
 	if cfg.Environment != config.EnvLocal {
 		return fmt.Errorf("refusing to seed %s; this tool is for LOCAL only", cfg.Environment)
@@ -116,6 +129,7 @@ func run() error {
 	stamp := now.Format("20060102T150405")
 
 	m := manifest{
+		Stage:        "open",
 		Warning:      "Demo data. LOCAL only. Chain calls are confirmed by cmd/devconfirm, which sends nothing anywhere.",
 		TokenHowTo:   "go run ./cmd/devtoken -role MANAGER | -role TRUSTEE | -role COMPLIANCE | -investor <investorId>",
 		BusinessTime: business,
@@ -143,6 +157,11 @@ func run() error {
 		return fmt.Errorf("creating the scheme: %w", err)
 	}
 
+	leaseID, err := newAsset(ctx, tx, m.SchemeID, stamp)
+	if err != nil {
+		return err
+	}
+
 	mgr, err := newInvestor(ctx, tx, m.SchemeID, "manager", false)
 	if err != nil {
 		return err
@@ -153,12 +172,17 @@ func run() error {
 	}
 
 	people := make([]investor, 0, *count)
+	details := map[string]entitlement.HolderDetail{
+		mgr.ID: {InvestorID: mgr.ID, Class: entitlement.ClassBodyCorporate, BankAccountID: mgr.Bank, FundAccountID: "fa_00000000000000"},
+	}
 	for i := 0; i < *count; i++ {
 		p, err := newInvestor(ctx, tx, m.SchemeID, fmt.Sprintf("%03d", i), true)
 		if err != nil {
 			return err
 		}
 		people = append(people, p)
+		details[p.ID] = entitlement.HolderDetail{InvestorID: p.ID, Class: entitlement.ClassResidentIndividual,
+			BankAccountID: p.Bank, FundAccountID: fmt.Sprintf("fa_%014d", i+1)}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
@@ -223,7 +247,114 @@ func run() error {
 	}
 	m.Bidders, m.FreeInvestors = people[:*bids], people[*bids:]
 	fmt.Printf("placed %d bids (%d units against 475 on offer)\n", *bids, *bids**units)
+	if *stage == "open" {
+		return write(*out, m)
+	}
+
+	head, closeHead, err := devsim.HeadFromConfig(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer closeHead()
+	if err := settle(ctx, c, mgrTok, pool, head, m.SchemeID, offer.ID); err != nil {
+		return fmt.Errorf("settling the offer: %w", err)
+	}
+	m.Stage = "settled"
+	fmt.Println("offer SETTLED: ballot drawn, 475 units credited, manager's 25 recorded (chain confirmations simulated)")
+
+	if *stage == "paid" {
+		paid, err := seedPaidPeriod(ctx, cfg, pool, head, &m, details, leaseID)
+		if err != nil {
+			return fmt.Errorf("seeding the distribution period: %w", err)
+		}
+		m.Stage, m.Period = "paid", paid
+		fmt.Printf("period %d CLOSED: INR %d distributed, %d MOCK payouts settled\n",
+			paid.PeriodSeq, paid.Distributed/100, paid.Payouts)
+	}
 	return write(*out, m)
+}
+
+// settle drives the offer from OPEN to SETTLED through the API, confirming each chain call as devconfirm would.
+//
+// Every step is the endpoint the console calls, so the resulting rows are exactly what a clicked-through demo
+// produces. The confirmations are simulated, which is the one thing a console user could not do by clicking.
+func settle(ctx context.Context, c *client, tok string, pool *db.Pool, head devsim.Head, schemeID, offerID string) error {
+	confirm := func() error { return confirmChain(ctx, pool, head, schemeID) }
+	base := "/v1/admin/offers/" + offerID
+	steps := []struct {
+		name, path string
+		body       any
+		want       int
+	}{
+		{"close", base + "/transitions", map[string]any{"to": "CLOSED"}, http.StatusOK},
+		{"freeze", base + "/book/freeze", nil, http.StatusOK},
+		{"commit", base + "/ballot/commit", nil, http.StatusAccepted},
+		{"reveal", base + "/ballot/reveal", nil, http.StatusAccepted},
+		{"draw", base + "/ballot/draw", nil, http.StatusOK},
+		{"finalise-allotment", base + "/transitions", map[string]any{"to": "ALLOTMENT_FINALISED"}, http.StatusOK},
+		{"begin", base + "/settlement/begin", nil, http.StatusAccepted},
+	}
+	for _, s := range steps {
+		if err := c.post(s.path, tok, s.name, s.body, s.want, nil); err != nil {
+			return fmt.Errorf("%s: %w", s.name, err)
+		}
+		if err := confirm(); err != nil {
+			return err
+		}
+	}
+	for i := 0; ; i++ {
+		var st struct {
+			Stage           string  `json:"stage"`
+			CreditedHolders int     `json:"creditedHolders"`
+			NextStep        *string `json:"nextStep"`
+		}
+		if err := c.get(base+"/settlement", tok, &st); err != nil {
+			return err
+		}
+		switch {
+		case st.Stage == "FINALISED":
+			return nil
+		case i > 20:
+			return fmt.Errorf("settlement stopped at stage %s, cursor %d", st.Stage, st.CreditedHolders)
+		case st.NextStep != nil && *st.NextStep == "settleBatch":
+			if err := c.post(base+"/settlement/batches", tok, fmt.Sprintf("batch-%d", st.CreditedHolders),
+				map[string]any{"cursorFrom": st.CreditedHolders}, http.StatusAccepted, nil); err != nil {
+				return fmt.Errorf("batch at %d: %w", st.CreditedHolders, err)
+			}
+		case st.NextStep != nil && *st.NextStep == "finaliseSettlement":
+			if err := c.post(base+"/settlement/finalise", tok, "finalise", nil, http.StatusAccepted, nil); err != nil {
+				return fmt.Errorf("finalise: %w", err)
+			}
+		}
+		if err := confirm(); err != nil {
+			return err
+		}
+	}
+}
+
+// newAsset gives the scheme an SPV, a property and a lease, which rent receipts are recorded against.
+func newAsset(ctx context.Context, tx pgx.Tx, schemeID, stamp string) (string, error) {
+	sum := sha256.Sum256([]byte("acresync/devseed/cin/" + schemeID))
+	cin := fmt.Sprintf("U70100KA26PTC%06d", (uint32(sum[0])<<16|uint32(sum[1])<<8|uint32(sum[2]))%1000000)
+	var spv, prop, lease string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO spvs (scheme_id, cin, name, incorporation_date) VALUES ($1, $2, $3, '2025-04-01') RETURNING id`,
+		schemeID, cin, "AcreSync Demo SPV "+stamp).Scan(&spv); err != nil {
+		return "", fmt.Errorf("creating the SPV: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO properties (spv_id, name, address_text, city, grade, carpet_area_sqft, leasable_area_sqft, acquisition_value_paise)
+		VALUES ($1, 'Demo Business Park', '1 Demo Road', 'Bengaluru', 'A', 80000, 100000, 50000000000) RETURNING id`,
+		spv).Scan(&prop); err != nil {
+		return "", fmt.Errorf("creating the property: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO leases (property_id, tenant_name, monthly_rent_paise, start_date, end_date)
+		VALUES ($1, 'Demo Anchor Tenant Pvt Ltd', 380000000, '2025-04-01', '2035-03-31') RETURNING id`,
+		prop).Scan(&lease); err != nil {
+		return "", fmt.Errorf("creating the lease: %w", err)
+	}
+	return lease, nil
 }
 
 // newInvestor creates an investor with accounts, verified KYC, an anchor for the scheme, and a wallet.
@@ -234,14 +365,31 @@ func run() error {
 func newInvestor(ctx context.Context, tx pgx.Tx, schemeID, label string, bidder bool) (investor, error) {
 	var p investor
 	blob := []byte("enc:devseed:" + label + ":" + schemeID)
+	class := "RESIDENT_IND"
+	if !bidder {
+		class = "BODY_CORPORATE" // the investment manager is a company
+	}
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO investors (full_name_enc, pan_enc, email_enc, phone_enc, investor_class)
-		VALUES ($1, $1, $1, $1, 'RESIDENT_IND') RETURNING id`, blob).Scan(&p.ID); err != nil {
+		VALUES ($1, $1, $1, $1, $2) RETURNING id`, blob, class).Scan(&p.ID); err != nil {
 		return p, fmt.Errorf("creating investor %s: %w", label, err)
 	}
 	sum := sha256.Sum256([]byte("acresync/devseed/wallet/" + p.ID))
 	p.Wallet = "0x" + hex.EncodeToString(sum[:20])
 	if _, err := tx.Exec(ctx, `INSERT INTO wallets (investor_id, address) VALUES ($1, $2)`, p.ID, p.Wallet); err != nil {
+		return p, err
+	}
+	// Every holder needs an anchor for the register snapshot and a bank account to be paid into, the manager
+	// included: its 25 units earn distributions like any other.
+	anchor := sha256.Sum256([]byte("acresync/devseed/anchor/" + schemeID + "/" + p.ID))
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO investor_anchors (investor_id, scheme_id, anchor_hash, pepper_key_id)
+		VALUES ($1, $2, $3, 'devseed')`, p.ID, schemeID, anchor[:]); err != nil {
+		return p, err
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO bank_accounts (investor_id, account_number_enc, ifsc, account_name_enc, verified_at)
+		VALUES ($1, $2, 'HDFC0000001', $2, now()) RETURNING id`, p.ID, blob).Scan(&p.Bank); err != nil {
 		return p, err
 	}
 	if !bidder {
@@ -253,20 +401,9 @@ func newInvestor(ctx context.Context, tx pgx.Tx, schemeID, label string, bidder 
 		VALUES ($1, 'NSDL', $2, $3) RETURNING id`, p.ID, "IN"+short[:6], short).Scan(&p.Demat); err != nil {
 		return p, err
 	}
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO bank_accounts (investor_id, account_number_enc, ifsc, account_name_enc)
-		VALUES ($1, $2, 'HDFC0000001', $2) RETURNING id`, p.ID, blob).Scan(&p.Bank); err != nil {
-		return p, err
-	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO kyc_records (investor_id, provider, kyc_ref, status, verified_at, expires_at)
 		VALUES ($1, 'MOCK', $2, 'VERIFIED', now(), now() + interval '1 year')`, p.ID, "DEVSEED-"+short); err != nil {
-		return p, err
-	}
-	anchor := sha256.Sum256([]byte("acresync/devseed/anchor/" + schemeID + "/" + p.ID))
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO investor_anchors (investor_id, scheme_id, anchor_hash, pepper_key_id)
-		VALUES ($1, $2, $3, 'devseed')`, p.ID, schemeID, anchor[:]); err != nil {
 		return p, err
 	}
 	return p, nil
@@ -314,6 +451,24 @@ func (c *client) post(path, token, step string, body any, want int, into any) er
 		return json.Unmarshal(got, into)
 	}
 	return nil
+}
+
+func (c *client) get(path, token string, into any) error {
+	req, err := http.NewRequest(http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	got, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, strings.TrimSpace(string(got)))
+	}
+	return json.Unmarshal(got, into)
 }
 
 func ping(ctx context.Context, base string) error {

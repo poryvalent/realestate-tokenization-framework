@@ -46,8 +46,18 @@ go run ./cmd/devconfirm -watch      # fakes the relayer: confirms queued chain c
 go run ./cmd/devseed                # once: demo scheme, 250 investors, an OPEN offer with 240 bids
 ```
 
-`devseed` writes `orchestrator/var/devseed.json` with the scheme, the offer, and every investor id (240
-who have bid, 10 who have not, for placing a bid by hand). Mint tokens with:
+The API must already be running when `devseed` starts, because bids go through it. `-stage` sets how far
+the seed goes:
+
+| `-stage` | What you get | Build against it |
+|---|---|---|
+| `open` (default) | An OPEN offer with 240 bids | The operator console, clicking close → … → finalise yourself |
+| `settled` | Ballot drawn and the register credited (475 public units, manager's 25) | Holdings |
+| `paid` | Plus one CLOSED quarter: ₹95 lakh distributed, 241 settled MOCK payouts (₹34,200 net to a 2-unit holder after 10% TDS) | The investor dashboard: holdings, entitlements, payouts |
+
+Each run creates a new scheme, so run it once per stage you want. It writes
+`orchestrator/var/devseed.json` with the scheme, the offer, the period, and every investor id (240 who
+bid, 10 who did not, for placing a bid by hand). Mint tokens with:
 
 ```bash
 go run ./cmd/devtoken -role MANAGER        # or TRUSTEE, COMPLIANCE

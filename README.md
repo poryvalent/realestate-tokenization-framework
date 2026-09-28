@@ -207,6 +207,7 @@ export ACRESYNC_ANCHOR_PEPPER_DEV=$(openssl rand -base64 32)
 go run ./cmd/api                          # http://127.0.0.1:8080/v1
 go run ./cmd/devtoken -role MANAGER       # an operator token, LOCAL only
 go run ./cmd/devseed                      # demo scheme, investors, an open offer with 240 bids
+go run ./cmd/devseed -stage paid          # ...settled, plus a closed quarter with MOCK payouts
 go run ./cmd/devconfirm -watch            # SIMULATED confirmations for LOCAL schemes only
 ```
 

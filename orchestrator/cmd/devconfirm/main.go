@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -22,15 +21,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acresync/orchestrator/internal/chain"
 	"github.com/acresync/orchestrator/internal/config"
 	"github.com/acresync/orchestrator/internal/db"
 	"github.com/acresync/orchestrator/internal/devsim"
 )
-
-type headReader interface {
-	Head(ctx context.Context) (uint64, error)
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -63,21 +57,11 @@ func run() error {
 	}
 	defer pool.Close()
 
-	var head headReader
-	switch {
-	case os.Getenv("ACRESYNC_CHAIN_SIMULATED") == "true":
-		head = chain.Simulated{}
-	case !cfg.Chain.RPCURL.IsZero():
-		r, err := chain.DialReader(ctx, cfg.Chain)
-		if err != nil {
-			return err
-		}
-		defer r.Close()
-		head = r
-	default:
-		return errors.New("no chain head to record against: set ACRESYNC_CHAIN_SIMULATED=true or ACRESYNC_CHAIN_RPC_URL, " +
-			"the same as the API")
+	head, closeHead, err := devsim.HeadFromConfig(ctx, cfg)
+	if err != nil {
+		return err
 	}
+	defer closeHead()
 
 	fmt.Println("devconfirm: SIMULATED confirmations. Nothing is sent to any chain.")
 	for {

@@ -88,8 +88,13 @@ func TestConfirmOnlyTouchesLocalRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].FunctionName != "anchorBidbook" || got[1].FunctionName != "commitSeed" {
-		t.Fatalf("confirmed %v, want both LOCAL rows oldest first", got)
+	// Both rows were created in this one transaction, so created_at ties and their order is not asserted.
+	names := map[string]bool{}
+	for _, c := range got {
+		names[c.FunctionName] = true
+	}
+	if len(got) != 2 || !names["anchorBidbook"] || !names["commitSeed"] {
+		t.Fatalf("confirmed %v, want both LOCAL rows", got)
 	}
 
 	var status string
@@ -113,6 +118,79 @@ func TestConfirmOnlyTouchesLocalRows(t *testing.T) {
 	// Nothing left to do.
 	if again, err := Confirm(ctx, tx, Options{Head: 1000, SchemeID: local}); err != nil || len(again) != 0 {
 		t.Fatalf("a second pass confirmed %v (%v)", again, err)
+	}
+}
+
+// TestALostNonceRaceIsRetried is devseed and devconfirm -watch confirming at the same moment, forced.
+//
+// A second connection confirms row B on nonce 0 and holds its transaction open. Confirm then takes row A, whose
+// statement cannot see the uncommitted nonce, so it also picks 0 and blocks on the unique index. When the other
+// transaction commits, A's statement fails with a unique violation, and only the retry turns that into nonce 1.
+//
+// Committed rather than rolled back, because the race is between two connections. Deleted afterwards.
+func TestALostNonceRaceIsRetried(t *testing.T) {
+	url := os.Getenv("ACRESYNC_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("no ACRESYNC_TEST_DATABASE_URL; skipping devsim integration tests")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	commit := func(f func(pgx.Tx) string) string {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := f(tx)
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	local := commit(func(tx pgx.Tx) string { return scheme(t, ctx, tx, "LOCAL") })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM chain_outbox WHERE scheme_id = $1`, local)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM schemes WHERE id = $1`, local)
+	})
+	a := commit(func(tx pgx.Tx) string { return enqueue(t, ctx, tx, local, "LOCAL", "first") })
+	time.Sleep(10 * time.Millisecond) // so A is strictly older and Confirm takes it first
+	b := commit(func(tx pgx.Tx) string { return enqueue(t, ctx, tx, local, "LOCAL", "second") })
+
+	other, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Exec(ctx, `
+		UPDATE chain_outbox SET status = 'CONFIRMED', tx_hash = '0x' || repeat('cd', 32), block_number = 1,
+		       confirmations = 12, confirmed_at = now(), nonce = 0
+		 WHERE id = $1`, b); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Confirm(ctx, pool, Options{Head: 1000, SchemeID: local})
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // Confirm is now blocked on nonce 0
+	if err := other.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Confirm failed on a lost nonce race instead of retrying: %v", err)
+	}
+
+	var nonce int64
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status::text, nonce FROM chain_outbox WHERE id = $1`, a).Scan(&status, &nonce); err != nil {
+		t.Fatal(err)
+	}
+	if status != "CONFIRMED" || nonce != 1 {
+		t.Fatalf("row A is %s on nonce %d, want CONFIRMED on nonce 1", status, nonce)
 	}
 }
 

@@ -27,10 +27,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/acresync/orchestrator/internal/chain"
+	"github.com/acresync/orchestrator/internal/config"
 )
 
 // Backdate is how far behind the head a faked confirmation is recorded.
@@ -90,7 +94,26 @@ func Confirm(ctx context.Context, db DB, o Options) ([]Confirmed, error) {
 	block := int64(o.Head - Backdate)
 	out := make([]Confirmed, 0, len(queued))
 	for _, c := range queued {
-		tx := sha256.Sum256([]byte("acresync/simulated-tx/v1/" + c.ID))
+		ok, err := confirmOne(ctx, db, c.ID, block)
+		if err != nil {
+			return out, err
+		}
+		if ok {
+			c.BlockNumber = block
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// confirmOne marks one row confirmed on the next free nonce.
+//
+// Two confirmers running at once (devseed and devconfirm -watch) can both read the same max(nonce) and the
+// loser hits outbox_one_tx_per_nonce. The loser retries with a fresh read rather than failing, because a lost
+// race here is not an error: the other process simply got there first.
+func confirmOne(ctx context.Context, db DB, id string, block int64) (bool, error) {
+	tx := sha256.Sum256([]byte("acresync/simulated-tx/v1/" + id))
+	for attempt := 0; ; attempt++ {
 		tag, err := db.Exec(ctx, `
 			UPDATE chain_outbox o
 			   SET status = 'CONFIRMED', tx_hash = $2, block_number = $3, confirmations = 12,
@@ -98,14 +121,36 @@ func Confirm(ctx context.Context, db DB, o Options) ([]Confirmed, error) {
 			       attempt_count = attempt_count + 1, last_error = NULL,
 			       nonce = (SELECT coalesce(max(nonce), -1) + 1 FROM chain_outbox WHERE scheme_id = o.scheme_id)
 			 WHERE id = $1 AND status = 'QUEUED' AND environment_tag = 'LOCAL'`,
-			c.ID, "0x"+hex.EncodeToString(tx[:]), block)
+			id, "0x"+hex.EncodeToString(tx[:]), block)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && attempt < 5 {
+			continue
+		}
 		if err != nil {
-			return out, err
+			return false, err
 		}
-		if tag.RowsAffected() == 1 {
-			c.BlockNumber = block
-			out = append(out, c)
-		}
+		return tag.RowsAffected() == 1, nil
 	}
-	return out, nil
+}
+
+// Head reads the chain head.
+type Head interface {
+	Head(ctx context.Context) (uint64, error)
+}
+
+// HeadFromConfig picks the same chain the API reads: the simulated one when ACRESYNC_CHAIN_SIMULATED=true, or
+// the configured RPC. Using a different source from the API would record target blocks it cannot agree with.
+func HeadFromConfig(ctx context.Context, cfg *config.Config) (Head, func(), error) {
+	switch {
+	case os.Getenv("ACRESYNC_CHAIN_SIMULATED") == "true":
+		return chain.Simulated{}, func() {}, nil
+	case !cfg.Chain.RPCURL.IsZero():
+		r, err := chain.DialReader(ctx, cfg.Chain)
+		if err != nil {
+			return nil, nil, err
+		}
+		return r, r.Close, nil
+	}
+	return nil, nil, errors.New("no chain head to record against: set ACRESYNC_CHAIN_SIMULATED=true or " +
+		"ACRESYNC_CHAIN_RPC_URL, the same as the API")
 }
