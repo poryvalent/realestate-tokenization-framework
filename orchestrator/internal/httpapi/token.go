@@ -224,3 +224,16 @@ func (s *signer) verify(raw string, now time.Time) (Claims, error) {
 // Applied only to issued-at, never to expiry. Allowing skew on expiry would keep a revoked-by-expiry token
 // working past its end, which is the direction that matters.
 const clockSkewAllowance = 60 * time.Second
+
+// MintDevToken signs a token under the session secret, for local development tooling only.
+//
+// There is no operator sign-in yet, so an operator console run against a LOCAL API has no other way to obtain
+// a token. It grants nothing the secret does not already grant: whoever holds the secret can sign tokens with
+// or without this function. The command that calls it refuses to run outside LOCAL.
+func MintDevToken(secret []byte, c Claims) (string, error) {
+	s, err := newSigner(secret)
+	if err != nil {
+		return "", err
+	}
+	return s.issue(c)
+}

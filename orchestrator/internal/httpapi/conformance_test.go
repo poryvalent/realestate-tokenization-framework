@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -991,4 +992,67 @@ func TestInvestorResponsesAreNeverCached(t *testing.T) {
 			}
 		})
 	}
+}
+
+// unbuiltOperations are contract operations the server does not serve yet. Kept here, and checked in both
+// directions, so the list cannot claim something is missing once it is built, or hide something that is.
+var unbuiltOperations = map[string]string{
+	"GET /offers/{offerId}/documents":                             "public verification read",
+	"GET /offers/{offerId}/ballot":                                "public verification read",
+	"GET /offers/{offerId}/allotments":                            "public verification read",
+	"GET /offers/{offerId}/proofs/bids/{bidRef}":                  "public verification read",
+	"GET /periods/{periodId}/ndcf":                                "public verification read",
+	"GET /periods/{periodId}/proofs/entitlements/{walletAddress}": "public verification read",
+	"GET /admin/periods/{periodId}/reconciliation":                "the contract's shape does not match the reconciliation tables",
+}
+
+// TestEveryContractOperationIsServedOrListedAsUnbuilt walks the published contract against a server with every
+// dependency present.
+//
+// The server's catch-all answers "no such route" for anything it does not serve, which is distinguishable from
+// a handler's own 404 for a missing resource. POST /auth/session needs an upstream token verifier the write
+// harness does not carry; it is exercised in session_test.go.
+func TestEveryContractOperationIsServedOrListedAsUnbuilt(t *testing.T) {
+	doc := loadContract(t)
+	h := newWriteHarness(t)
+	paths := doc["paths"].(map[string]any)
+
+	fill := strings.NewReplacer(
+		"{schemeId}", "11111111-1111-4111-8111-111111111111",
+		"{offerId}", "22222222-2222-4222-8222-222222222222",
+		"{periodId}", "33333333-3333-4333-8333-333333333333",
+		"{bidRef}", "9e107d9d372bb6826bd81d3542a419d6",
+		"{walletAddress}", "0xf858a002402e968d1c7ec62c3824d30520e9ca38",
+	)
+
+	served := 0
+	for template, item := range paths {
+		for method := range item.(map[string]any) {
+			switch method {
+			case "get", "post", "put", "patch", "delete":
+			default:
+				continue
+			}
+			op := strings.ToUpper(method) + " " + template
+			if op == "POST /auth/session" {
+				continue
+			}
+
+			req := httptest.NewRequest(strings.ToUpper(method), "/v1"+fill.Replace(template), nil)
+			rec := httptest.NewRecorder()
+			chain(h.srv, withRequestID).ServeHTTP(rec, req)
+			unrouted := rec.Code == http.StatusNotFound && strings.Contains(rec.Body.String(), "no such route")
+
+			_, listed := unbuiltOperations[op]
+			switch {
+			case unrouted && !listed:
+				t.Errorf("%s is in the contract but not served, and not listed as unbuilt", op)
+			case !unrouted && listed:
+				t.Errorf("%s is served now; remove it from unbuiltOperations", op)
+			case !unrouted:
+				served++
+			}
+		}
+	}
+	t.Logf("%d contract operations served, %d listed as unbuilt, plus POST /auth/session", served, len(unbuiltOperations))
 }

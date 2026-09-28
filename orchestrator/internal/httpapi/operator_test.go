@@ -134,7 +134,9 @@ func TestOutboxServesTheContractsFields(t *testing.T) {
 	schemeID := seedAPIScheme(t, ctx, tx)
 	seedOutboxEntry(t, ctx, tx, schemeID, "anchorBidbook", "CONFIRMED", tokenNow.Add(-time.Hour))
 
-	rec := getAs(t, srv, "/v1/admin/outbox", tokenFor(t, srv, operatorClaims(RoleManager)))
+	// Scoped to this test's scheme. Other packages' suites commit outbox rows to the same database while this
+	// one runs, and an unfiltered queue would put their newest row first.
+	rec := getAs(t, srv, "/v1/admin/outbox?schemeId="+schemeID, tokenFor(t, srv, operatorClaims(RoleManager)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d. body: %s", rec.Code, rec.Body.String())
 	}
@@ -220,7 +222,7 @@ func TestAnUnsignedEntryHasANullNonce(t *testing.T) {
 	schemeID := seedAPIScheme(t, ctx, tx)
 	seedOutboxEntry(t, ctx, tx, schemeID, "anchorBidbook", "QUEUED", tokenNow.Add(-time.Hour))
 
-	decoded := decodeBody(t, getAs(t, srv, "/v1/admin/outbox", tokenFor(t, srv, operatorClaims(RoleManager))))
+	decoded := decodeBody(t, getAs(t, srv, "/v1/admin/outbox?schemeId="+schemeID, tokenFor(t, srv, operatorClaims(RoleManager))))
 	entry := decoded["items"].([]any)[0].(map[string]any)
 
 	if v, present := entry["nonce"]; !present || v != nil {
@@ -243,7 +245,7 @@ func TestOutboxIsNewestFirst(t *testing.T) {
 	seedOutboxEntry(t, ctx, tx, schemeID, "newest", "QUEUED", tokenNow.Add(-time.Minute))
 	seedOutboxEntry(t, ctx, tx, schemeID, "middle", "QUEUED", tokenNow.Add(-2*time.Hour))
 
-	decoded := decodeBody(t, getAs(t, srv, "/v1/admin/outbox", tokenFor(t, srv, operatorClaims(RoleManager))))
+	decoded := decodeBody(t, getAs(t, srv, "/v1/admin/outbox?schemeId="+schemeID, tokenFor(t, srv, operatorClaims(RoleManager))))
 	items := decoded["items"].([]any)
 	if len(items) != 3 {
 		t.Fatalf("got %d entries, want 3", len(items))

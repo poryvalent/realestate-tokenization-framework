@@ -19,7 +19,8 @@ type Deps struct {
 	// Env decides what is safe to expose. Some diagnostics belong in LOCAL and nowhere else.
 	Env config.Environment
 
-	// Wall is real elapsed time, for request logging and nothing else. Business time comes from the
+	// Wall is real elapsed time, for request logging, session expiry and upload URL expiry, which are facts
+	// about the real world rather than the simulated calendar. Business time comes from the
 	// simulated clock through the domain, never from here.
 	Wall clock.Business
 
@@ -67,6 +68,10 @@ type Deps struct {
 	Publisher Publisher
 	// SeedPepper derives the ballot seed secret. It never leaves the process and is never logged.
 	SeedPepper []byte
+	// Uploads keeps the bytes of presigned uploads, and UploadBaseURL is the absolute origin the upload URLs
+	// point at. Both are needed for POST /documents/presign.
+	Uploads       UploadStore
+	UploadBaseURL string
 }
 
 // DefaultSessionTTL is how long a session lasts when none is configured.

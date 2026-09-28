@@ -31,6 +31,13 @@ func (s *Server) writeRoutes(mux *http.ServeMux) {
 			s.requireInvestor(s.write("POST /v1/offers/{offerId}/bids", s.handlePlaceBid)))
 	}
 
+	if s.deps.Uploads != nil && s.deps.UploadBaseURL != "" {
+		mux.HandleFunc("POST /v1/documents/presign",
+			s.requireInvestor(s.write("POST /v1/documents/presign", s.handlePresignDocument)))
+		// The storage end of the presigned URL. The signed URL is the credential, so there is no bearer token.
+		mux.HandleFunc("PUT /v1/documents/{documentId}/content", s.handleUploadContent)
+	}
+
 	manager := func(route string, fn writeFunc) {
 		mux.HandleFunc(route, op(rolesRunOffer...)(s.write(route, fn)))
 	}

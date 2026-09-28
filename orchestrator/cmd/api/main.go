@@ -66,6 +66,12 @@ func run() error {
 		Outbox:        store.NewOutbox(pool),
 	}
 
+	closeWrites, err := writeDeps(ctx, cfg, pool.Pool, &deps)
+	if err != nil {
+		return err
+	}
+	defer closeWrites()
+
 	// The upstream verifier is attached only when a JWKS is configured. Without it POST /auth/session is not
 	// registered, which is better than registering an endpoint that cannot establish who is calling.
 	verifier, err := upstreamVerifier(cfg)

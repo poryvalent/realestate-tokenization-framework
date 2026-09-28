@@ -4,16 +4,50 @@ The contract is [`openapi.yaml`](./openapi.yaml). This file explains how to work
 
 ## Read this first
 
-**No backend exists yet.** There is no HTTP server in this repository. The domain logic does exist —
-26 Go packages, 796 passing tests — but nothing listens on a port. This contract is published so the
-UI can be built against a mock while the handlers are written behind it.
+**The backend is real.** `orchestrator/cmd/api` serves 27 of the contract's 34 operations against
+Postgres, including all 12 writes (`POST /auth/session` needs a Web3Auth JWKS configured). Still
+served only by the mock:
+
+- the six public verification reads: `/offers/{id}/documents`, `/offers/{id}/ballot`,
+  `/offers/{id}/allotments`, `/offers/{id}/proofs/bids/{bidRef}`, `/periods/{id}/ndcf`,
+  `/periods/{id}/proofs/entitlements/{wallet}`
+- `/admin/periods/{id}/reconciliation`, whose shape does not match the reconciliation tables yet
+
+A test (`TestEveryContractOperationIsServedOrListedAsUnbuilt`) fails if that list goes stale.
 
 Consequences for you:
 
 - Every shape here is derived from a Go type that already exists and passes tests, so field names and
-  types are **not going to change underneath you**. That is the whole reason the contract came first.
+  types are **not going to change underneath you**. The real server's responses are validated against
+  this file by the conformance tests.
 - Anything marked `simulated` or `MOCK` in a response is genuinely mocked in the backend too, not just
   in your mock server. Payouts and ASBA fund-blocking are mocked pending corporate banking KYC.
+- A write that queues a chain call (anything returning `202`) is queued, not sent. The relayer that
+  submits the queue to Sepolia is part of M9. `nextStep: null` on the settlement view means "wait for
+  the queued call to confirm".
+
+## Running the real backend
+
+LOCAL only, for now:
+
+```bash
+cd orchestrator
+export ACRESYNC_ENVIRONMENT=LOCAL
+export ACRESYNC_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/acresync
+export ACRESYNC_API_SESSION_SECRET=$(openssl rand -base64 32)
+export ACRESYNC_ANCHOR_PEPPER_DEV=$(openssl rand -base64 32)   # the ballot needs it
+go run ./cmd/api                                               # http://127.0.0.1:8080/v1
+
+# There is no operator sign-in yet, so mint tokens (same env):
+go run ./cmd/devtoken -role MANAGER        # or TRUSTEE, COMPLIANCE
+go run ./cmd/devtoken -investor <uuid>
+```
+
+Every `POST` needs an `Idempotency-Key` header of 16 to 128 characters with no spaces. Retrying with the
+same key and body returns the original response with `Idempotency-Replayed: true`.
+
+`uploadUrl` from `POST /documents/presign` is a signed URL. `PUT` the file bytes to it with the declared
+`Content-Type` and no `Authorization` header; it expires after 15 minutes and accepts one upload.
 
 ## Running the mock
 
@@ -28,7 +62,7 @@ nothing:
 
 ```
 VITE_API_BASE=http://127.0.0.1:4010          # mock
-VITE_API_BASE=http://127.0.0.1:8080/v1       # real, later
+VITE_API_BASE=http://127.0.0.1:8080/v1       # real
 ```
 
 Verified working: public endpoints return populated example bodies, and protected endpoints return 401

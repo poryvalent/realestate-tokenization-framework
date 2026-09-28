@@ -44,3 +44,6 @@ node_modules/
 Thumbs.db
 *.log
 /tmp/
+
+# Local runtime data: mock IPFS pins and presigned uploads.
+var/

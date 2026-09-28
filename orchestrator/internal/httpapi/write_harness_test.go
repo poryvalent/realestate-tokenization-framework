@@ -19,6 +19,7 @@ import (
 	"github.com/acresync/orchestrator/internal/ipfs"
 	"github.com/acresync/orchestrator/internal/merkle"
 	"github.com/acresync/orchestrator/internal/store"
+	"github.com/acresync/orchestrator/internal/uploads"
 )
 
 // The write-path harness.
@@ -50,6 +51,8 @@ type writeHarness struct {
 	clock *movableClock
 	chain *fakeChain
 	bank  *asba.Sandbox
+
+	uploads *uploads.Dir
 }
 
 // movableClock is a business clock a test can advance.
@@ -70,6 +73,10 @@ func newWriteHarness(t *testing.T) *writeHarness {
 	h := &writeHarness{ctx: ctx, tx: tx, clock: &movableClock{at: businessNow},
 		chain: &fakeChain{hashes: map[uint64]merkle.Hash{}}}
 	h.bank = asba.NewSandbox(h.clock)
+
+	if h.uploads, err = uploads.NewDir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
 
 	pinDir := t.TempDir()
 	provider, err := ipfs.NewMockProvider(pinDir)
@@ -92,6 +99,8 @@ func newWriteHarness(t *testing.T) *writeHarness {
 		ASBA:          h.bank,
 		Publisher:     ipfs.NewPublisher(provider),
 		SeedPepper:    []byte("test pepper that never leaves this process"),
+		Uploads:       h.uploads,
+		UploadBaseURL: "http://acresync.test",
 	})
 	return h
 }

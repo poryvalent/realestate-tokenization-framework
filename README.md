@@ -15,7 +15,7 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 
 | Milestone | Scope | State |
 |---|---|---|
-| M0 | Canonical JSON, money/paise, idempotency, config, clock, 12 SQL migrations | Complete |
+| M0 | Canonical JSON, money/paise, idempotency, config, clock, SQL migrations | Complete |
 | M1 | Merkle, ballot allocation engine, distribution maths | Complete |
 | M2 | Solidity: roles, ballot, scheme, encodings | Complete |
 | M3 | Deployed and verified on Sepolia, live commit–reveal ceremony | Complete |
@@ -23,34 +23,42 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M5 | IPFS pinning, NDCF, snapshots, entitlements, payouts | Complete |
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
 | M7 | Divergence resolution, period reversal, carry-forward adjustments | Complete |
-| — | HTTP API | All read surfaces live (public, investor, chain outbox) with session exchange, auth and mutation admission. The 12 mutations are not written: see below |
+| — | HTTP API | 27 of 34 contract operations live, including all 12 writes. Six public verification reads and reconciliation remain: see below |
 | M8 | Frontend | Not started |
 | M9 | Full Sepolia rehearsal | Not started |
 
-**1362 Go tests, 131 Solidity tests, `go vet` clean.** The domain layer is complete:
-issuance, distribution and correction are all built and tested end to end against Postgres.
+**1414 Go tests (subtests included, 0 skipped against Postgres), 131 Solidity tests, `go vet` clean.**
+The domain layer is complete: issuance, distribution and correction are all built and tested end to end
+against Postgres.
 
 ### What the HTTP API does and does not serve
 
-Every **read** in the published contract is live against real Postgres: the public verification
-surface, an investor's own records behind a session token, and the chain outbox for operators.
+**Live against real Postgres:** the public scheme, offer and period reads; an investor's own records
+behind a session token; the chain outbox and offer readiness for operators; and all **12 writes**:
 
-The **12 mutations are not written**, and that is a boundary rather than a to-do list:
+| Investor | Operator |
+|---|---|
+| `placeBid`, `presignDocument` | `createOffer`, `advanceOffer`, `freezeBook`, `commitSeed`, `revealSeed`, `recommitSeed`, `drawBallot`, `beginSettlement`, `submitSettlementBatch`, `finaliseSettlement` |
 
-- Each one drives a domain ceremony that must reach the chain through the transactional outbox, so a
-  handler that merely wrote a row would look successful while anchoring nothing.
-- HTTP response replay has no storage yet. The derived idempotency key already makes a retry a no-op
-  in the domain, so a retry is safe; what is missing is returning the *same response* to the second
-  attempt rather than re-deriving it.
+Each write does its database change, its chain call enqueue, its audit row and its HTTP idempotency
+record in one transaction, so a retry with the same `Idempotency-Key` gets the original response back
+and a crash leaves nothing half-done. Each ceremony step is refused until the previous chain call is
+confirmed to depth, read from the outbox row that carries it. Settlement replays the draw and requires
+it to reproduce both anchored values before building the plan, so there is no stored plan to drift.
 
-Two published reads are also deliberately absent, because a wrong answer would be worse than none:
+**What that does not yet mean:**
 
-- `GET /admin/offers/{id}/readiness` reports `canAdvance` and a list of blockers from `offer.Guard`,
-  which needs an `offer.Evidence` assembled from the offer, its bids, their funds blocks, the ballot
-  run, the IPFS pins, the allocation rows and the settlement cursor. Gathered from fewer sources than
-  that, it returns a confident `canAdvance: true` on evidence nobody checked, and an operator would
-  act on it during a commit–reveal ceremony.
-- `GET /admin/periods/{id}/reconciliation` cannot be served as specified. `reconciliation_runs` is
+- **Queued is not sent.** The writes queue chain calls in `chain_outbox`; the relayer that signs and
+  submits them against Sepolia is M9. Until then a queued call confirms only in tests.
+- **Funds blocks are the in-memory ASBA sandbox.** A restart of the API forgets them. No bank is involved.
+- **The ballot seed pepper is the LOCAL development pepper.** Outside LOCAL it must come from a KMS, which
+  is not integrated, so the ceremony and settlement endpoints are not served there.
+- **Operator sign-in does not exist.** `cmd/devtoken` mints tokens under the session secret in LOCAL only.
+
+**Not served yet** (listed in a test that fails if this goes stale):
+
+- Six public verification reads: offer documents, ballot, allotments, bid proofs, NDCF, entitlement proofs.
+- `GET /admin/periods/{id}/reconciliation`, which cannot be served as specified. `reconciliation_runs` is
   keyed by `scheme_id` and `run_at` with no period reference, so linking a run to a period would be a
   guess — and that guess sets `blocksPayout`, the flag the database uses to refuse paying against a
   register known to be wrong. The fix belongs in the schema or the contract, not in a handler.
@@ -112,10 +120,10 @@ Stated plainly, because the distinction is the first thing anyone doing diligenc
 
 ```
 contracts/      Solidity sources, tests, deploy script (Foundry)
-db/migrations/  12 forward-only SQL migrations
+db/migrations/  15 forward-only SQL migrations
 docs/api/       HTTP API contract (OpenAPI) and the frontend guide
 docs/           Runbooks
-orchestrator/   Go services: 28 internal packages plus cmd tools
+orchestrator/   Go services: 31 internal packages plus cmd tools
 tools/          WSL wrappers for Foundry
 ```
 
@@ -124,14 +132,16 @@ tools/          WSL wrappers for Foundry
 [`docs/api/openapi.yaml`](docs/api/openapi.yaml) is the HTTP contract, with
 [`docs/api/README.md`](docs/api/README.md) as the guide for whoever builds the UI.
 
-**The contract exists; the server does not yet.** No HTTP layer is implemented — the only outbound HTTP
-in the repository is the Pinata and RazorpayX clients. The contract was published first so the frontend
-can be built against a mock while the handlers are written behind it:
+`orchestrator/cmd/api` serves it (see "Running it"). For the operations not served yet, or to build UI
+without a database, the contract runs as a mock:
 
 ```bash
 npx @stoplight/prism-cli mock docs/api/openapi.yaml --port 4010
 curl http://127.0.0.1:4010/schemes
 ```
+
+The server's responses are validated against the contract by the conformance tests, in addition to the
+check below.
 
 Every schema is derived from a Go type that already passes tests, and
 `internal/apicontract` fails the build if the two ever diverge — including a same-set reordering of
@@ -179,14 +189,27 @@ docker exec acresync-db psql -U postgres -d acresync -v ON_ERROR_STOP=1 -f /tmp/
 
 cd orchestrator
 export ACRESYNC_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:55432/acresync"
-go build -o bin/migrate ./cmd/migrate && ./bin/migrate -action up   # expect: applied 12
+go build -o bin/migrate ./cmd/migrate && ./bin/migrate -action up   # expect: applied 15
 
 export ACRESYNC_TEST_DATABASE_URL="$ACRESYNC_DATABASE_URL"
-go test ./... -count=1
+go test ./... -count=1 -v | grep -c -- '--- PASS'
 ```
 
 Without a database the suite still passes, but tests that need one skip rather than fail, so check
-the count: **1362 passing, 0 skipped** is a complete run.
+the count: **1414 passing, 0 skipped** is a complete run.
+
+The API, LOCAL only (the ballot and settlement need the development pepper):
+
+```bash
+export ACRESYNC_ENVIRONMENT=LOCAL
+export ACRESYNC_API_SESSION_SECRET=$(openssl rand -base64 32)
+export ACRESYNC_ANCHOR_PEPPER_DEV=$(openssl rand -base64 32)
+go run ./cmd/api                          # http://127.0.0.1:8080/v1
+go run ./cmd/devtoken -role MANAGER       # an operator token, LOCAL only
+```
+
+With `ACRESYNC_CHAIN_RPC_URL` set, the API dials it read-only (no relayer key) for the block head and
+block hashes the reveal needs. Mock IPFS pins and uploads are written under `var/`.
 
 Configuration is by environment. Copy `.env.example` to `.env` and fill it in; `.env` is gitignored, and
 the loader refuses to start outside `LOCAL` if a development pepper is present, because a pepper in an env
