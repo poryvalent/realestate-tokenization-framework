@@ -24,7 +24,7 @@ public holds 475. At least **200 distinct unitholders** and at least **95% of ND
 | M6 | Primary market: offer → ASBA → bid book → ballot → settled cap table | Complete |
 | M7 | Divergence resolution, period reversal, carry-forward adjustments | Complete |
 | — | HTTP API | 27 of 34 contract operations live, including all 12 writes. Six public verification reads and reconciliation remain: see below |
-| M8 | Frontend | Not started |
+| M8 | Frontend | Complete — dark cinematic rebuild (Tailwind + Framer Motion): all 14 routes against the mock and the real API, honest placeholders for the 6 unbuilt verification reads |
 | M9 | Full Sepolia rehearsal | Not started |
 
 **1414 Go tests (subtests included, 0 skipped against Postgres), 131 Solidity tests, `go vet` clean.**
