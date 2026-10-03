@@ -1,11 +1,24 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { animate, motion, useInView } from 'framer-motion';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  BadgeCheck,
+  Eye,
+  FileCheck2,
+  Landmark,
+  Lock,
+  Scale,
+  ShieldCheck,
+} from 'lucide-react';
 import { usePoll } from '../api/usePoll';
 import { pageItems } from '../api/client';
 import type { Offer, Scheme } from '../api/types';
 import { inr, inrShort, int, demandRatio } from '../lib/format';
 import { Card, LoadingCard, ErrorBox, StatusPill } from '../components/ui';
-import { ParallaxScene } from '../components/Parallax';
-import { Io, CountUp, Marquee, Magnetic, SpotField, Kinetic } from '../components/motion';
+
+const EASE: [number, number, number, number] = [0.25, 0.1, 0.25, 1];
 
 const TICKER = [
   'Fractional ownership',
@@ -42,30 +55,80 @@ const STEPS = [
 
 const WHY = [
   {
+    icon: ShieldCheck,
     title: 'The chain attests, never custodies',
     body: 'Rupees move through regulated bank rails. There is deliberately no house balance anywhere in the system — modelling one would model a custody arrangement the platform does not hold.',
   },
   {
+    icon: Lock,
     title: 'Your money stays in your account',
     body: 'Blocking is ASBA-style: funds are reserved in the investor’s own bank account, debited only to the extent units are allotted. A block is all or nothing — never a partial reservation.',
   },
   {
+    icon: Eye,
     title: 'Losers are published too',
     body: 'A book of 490 bids for 475 units produces 490 published allocations. Publishing only winners would make the draw unfalsifiable for exactly the people with the strongest reason to check it.',
   },
   {
+    icon: FileCheck2,
     title: 'One hash everywhere',
     body: 'SHA-256 across Merkle trees, document digests and seed commitments — so a third party reimplementing verification needs one primitive from their standard library.',
   },
   {
+    icon: BadgeCheck,
     title: 'The digest is the commitment',
     body: 'A content locator can stop resolving; a digest cannot. Verification is fetch the bytes, hash them, compare — the anchored value commits to the document itself.',
   },
   {
+    icon: Scale,
     title: 'No personal data on-chain',
     body: 'Investors appear only as HMAC anchors. Public endpoints carry leaf indices and anchors — never identities — so diligence never leaks privacy.',
   },
 ];
+
+function Fade({
+  children,
+  delay = 0,
+  className,
+}: {
+  children: ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 28, filter: 'blur(6px)' }}
+      whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.6, delay, ease: EASE }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function CountUp({ end, prefix = '', suffix = '' }: { end: number; prefix?: string; suffix?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-40px' });
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    const controls = animate(0, end, {
+      duration: 1.6,
+      ease: EASE,
+      onUpdate: (v) => setVal(Math.round(v)),
+    });
+    return () => controls.stop();
+  }, [inView, end]);
+  return (
+    <span ref={ref}>
+      {prefix}
+      {val.toLocaleString('en-IN')}
+      {suffix}
+    </span>
+  );
+}
 
 /* Live market panel: the current offer's real state, at hero scale. */
 function LiveOfferPanel({ scheme, loadingSchemes }: { scheme: Scheme | null; loadingSchemes: boolean }) {
@@ -81,19 +144,37 @@ function LiveOfferPanel({ scheme, loadingSchemes }: { scheme: Scheme | null; loa
   }
   if (!scheme || !offer) {
     return (
-      <div className="live-card">
-        <span className="live-tag">Market desk</span>
-        <p className="live-price">Next offer<br />opens soon.</p>
-        <p>New schemes appear here as they open — ask the team at the showcase desk for the timetable.</p>
+      <div className="liquid-glass rounded-3xl p-7 sm:p-8" role="status">
+        <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white/60">
+          Market desk
+        </span>
+        <p className="text-gradient mt-5 font-sans text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
+          Next offer
+          <br />
+          opens soon.
+        </p>
+        <p className="mt-4 text-sm leading-relaxed text-white/60">
+          New schemes appear here as they open — ask the team at the showcase desk for the timetable.
+        </p>
       </div>
     );
   }
   if (offers.error && !offer) {
     return (
-      <div className="live-card">
-        <span className="live-tag">Market desk</span>
-        <p className="live-price">Live market<br />unreachable.</p>
-        <p><Link to={`/schemes/${scheme.id}`}>Open the scheme →</Link></p>
+      <div className="liquid-glass rounded-3xl p-7 sm:p-8" role="status">
+        <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white/60">
+          Market desk
+        </span>
+        <p className="text-gradient mt-5 font-sans text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
+          Live market
+          <br />
+          unreachable.
+        </p>
+        <p className="mt-4 text-sm text-white/60">
+          <Link to={`/schemes/${scheme.id}`} className="text-brand-mist underline-offset-4 hover:underline">
+            Open the scheme →
+          </Link>
+        </p>
       </div>
     );
   }
@@ -106,29 +187,69 @@ function LiveOfferPanel({ scheme, loadingSchemes }: { scheme: Scheme | null; loa
   const bar = Math.max(0, Math.min(1, ratio));
 
   return (
-    <div className="live-card">
-      <div className="live-top">
-        <span className="live-tag"><span className="live-dot" aria-hidden="true" /> Live offer</span>
+    <div className="liquid-glass relative overflow-hidden rounded-3xl p-7 sm:p-8">
+      <div
+        className="pointer-events-none absolute -top-24 right-0 h-56 w-56 rounded-full bg-brand-blue/25 blur-[90px]"
+        aria-hidden="true"
+      />
+      <div className="relative flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2 rounded-full border border-brand-mist/30 bg-brand-mist/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-brand-mist">
+          <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-mist opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-mist" />
+          </span>
+          Live offer
+        </span>
         <StatusPill kind="offer" status={offer.status} />
       </div>
-      <p className="live-price">
+      <p className="relative mt-5 font-sans text-4xl font-semibold tracking-tight text-white sm:text-5xl">
         {inr(offer.terms?.priceBandLowerPaise)}–{inr(offer.terms?.priceBandUpperPaise)}
-        <span> per unit</span>
+        <span className="mt-1 block text-sm font-normal tracking-normal text-white/55">per unit</span>
       </p>
-      <dl className="kv live-kv">
-        <dt>Demand</dt>
-        <dd className="num">{demandRatio(sub?.oversubscriptionNumerator, sub?.oversubscriptionDenominator)}</dd>
-        <dt>Bids</dt>
-        <dd className="num">{int(sub?.bidCount)} from {int(sub?.distinctBidders)} investors</dd>
-        <dt>Units bid</dt>
-        <dd className="num">{int(sub?.unitsBid)} of {int(offer.terms?.unitsOnOffer)}</dd>
+      <dl className="relative mt-6 space-y-3 text-sm">
+        <div className="flex items-baseline justify-between gap-4 border-b border-white/10 pb-3">
+          <dt className="text-white/55">Demand</dt>
+          <dd className="font-mono text-white">{demandRatio(sub?.oversubscriptionNumerator, sub?.oversubscriptionDenominator)}</dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4 border-b border-white/10 pb-3">
+          <dt className="text-white/55">Bids</dt>
+          <dd className="font-mono text-white">{int(sub?.bidCount)} from {int(sub?.distinctBidders)} investors</dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-white/55">Units bid</dt>
+          <dd className="font-mono text-white">{int(sub?.unitsBid)} of {int(offer.terms?.unitsOnOffer)}</dd>
+        </div>
       </dl>
-      <div className="progress live-bar" role="progressbar" aria-valuenow={Math.round(bar * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Subscription demand">
-        <i style={{ transform: `scaleX(${bar})` }} />
+      <div
+        className="relative mt-5 h-1.5 overflow-hidden rounded-full bg-white/10"
+        role="progressbar"
+        aria-valuenow={Math.round(bar * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Subscription demand"
+      >
+        <motion.i
+          className="block h-full w-full origin-left rounded-full bg-gradient-to-r from-brand-blue to-brand-mist"
+          initial={{ scaleX: 0 }}
+          whileInView={{ scaleX: bar }}
+          viewport={{ once: true }}
+          transition={{ duration: 1, ease: EASE }}
+        />
       </div>
-      <p className="live-cta">
-        <Link className="btn primary" to={`/offers/${offer.id}`}>Open the offer →</Link>{' '}
-        <Link className="btn" to={`/offers/${offer.id}/ballot`}>Verify the ballot</Link>
+      <p className="relative mt-6 flex flex-wrap gap-3">
+        <Link
+          to={`/offers/${offer.id}`}
+          className="group inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black transition hover:scale-[1.03]"
+        >
+          Open the offer
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+        <Link
+          to={`/offers/${offer.id}/ballot`}
+          className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-sm text-white transition hover:bg-white/10"
+        >
+          Verify the ballot
+        </Link>
       </p>
     </div>
   );
@@ -140,166 +261,323 @@ export default function Home() {
 
   return (
     <>
-      <ParallaxScene>
-        <div className="px-layer px-grid" aria-hidden="true" data-speed="0.05" />
-        <div className="px-content">
-          <div className="hero hero-grid">
-            <div>
-              <h1>
-                <Kinetic text="The chain attests." />{' '}
-                <em>
-                  <Kinetic text="It never custodies." delay={420} />
-                </em>
-              </h1>
-              <Io delay={200}>
-                <p className="lede">
-                  AcreSync brings high-value real estate within reach through fractional ownership —
-                  500 units at ₹10 lakh each instead of one ₹50 crore cheque. Rupees move through
-                  regulated bank rails; what goes on-chain is a commitment to what happened, so you can
-                  verify your own allotment and entitlement without being given access to anything internal.
-                </p>
-              </Io>
-              <Io delay={320}>
-                <div className="proof-row">
-                  <a className="proof-chip" href="https://sepolia.etherscan.io/address/0xa656a42974b40cf64f32e758abb0689a2a178391" target="_blank" rel="noreferrer">
-                    <span className="dot" aria-hidden="true" /> Live on Sepolia · source-verified
-                  </a>
-                  <span className="proof-chip">No proxy · no upgrade keys</span>
-                  <span className="proof-chip">One hash · SHA-256 everywhere</span>
-                </div>
-              </Io>
-              <Io delay={420}>
-                <p style={{ marginTop: 22, marginBottom: 0 }}>
-                  <Magnetic>
-                    <Link className="btn primary" to="/login">Start investing →</Link>
-                  </Magnetic>{' '}
-                  <Magnetic>
-                    <Link className="btn" to="/admin">See the operator console</Link>
-                  </Magnetic>
-                </p>
-              </Io>
-            </div>
-            <Io delay={350} className="hero-panel">
-              <LiveOfferPanel scheme={schemes[0] ?? null} loadingSchemes={loading} />
-            </Io>
+      {/* ── Hero ─────────────────────────────────────────── */}
+      <section className="relative" aria-label="Introduction">
+        <div className="grid items-center gap-10 lg:grid-cols-[1.08fr_0.92fr]">
+          <div>
+            <motion.div
+              initial={{ opacity: 0, y: 16, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.55, ease: EASE }}
+            >
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs text-white/70">
+                <Landmark className="h-3.5 w-3.5 text-brand-mist" />
+                Fractional real estate · on-chain evidence
+              </span>
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 32, filter: 'blur(8px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.7, delay: 0.08, ease: EASE }}
+              className="mt-6 font-sans text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl"
+            >
+              <span className="text-gradient block">The chain attests.</span>
+              <motion.em
+                className="block text-white"
+                initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                transition={{ duration: 0.7, delay: 0.5, ease: EASE }}
+              >
+                It never custodies.
+              </motion.em>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.28, ease: EASE }}
+              className="mt-6 max-w-xl text-base leading-relaxed text-white/65 sm:text-lg"
+            >
+              AcreSync brings high-value real estate within reach through fractional ownership —
+              500 units at ₹10 lakh each instead of one ₹50 crore cheque. Rupees move through
+              regulated bank rails; what goes on-chain is a commitment to what happened, so you can
+              verify your own allotment and entitlement without being given access to anything internal.
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.4, ease: EASE }}
+              className="mt-6 flex flex-wrap gap-2.5"
+            >
+              <a
+                className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/65 transition hover:bg-white/[0.08]"
+                href="https://sepolia.etherscan.io/address/0xa656a42974b40cf64f32e758abb0689a2a178391"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-mist" aria-hidden="true" />
+                Live on Sepolia · source-verified
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </a>
+              <span className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/65">
+                No proxy · no upgrade keys
+              </span>
+              <span className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/65">
+                One hash · SHA-256 everywhere
+              </span>
+            </motion.div>
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.5, ease: EASE }}
+              className="mt-8 flex flex-wrap gap-3"
+            >
+              <Link
+                to="/login"
+                className="group inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:scale-[1.03]"
+              >
+                Start investing
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm text-white transition hover:bg-white/10"
+              >
+                See the operator console
+              </Link>
+            </motion.p>
           </div>
+          <motion.div
+            initial={{ opacity: 0, y: 32, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            transition={{ duration: 0.7, delay: 0.42, ease: EASE }}
+          >
+            <LiveOfferPanel scheme={schemes[0] ?? null} loadingSchemes={loading} />
+          </motion.div>
         </div>
-      </ParallaxScene>
+      </section>
 
-      <div className="figures" aria-label="Reference scheme at a glance">
-        <div className="figure"><b><CountUp end={50} prefix="₹" suffix=" Cr" /></b><span>Target corpus</span></div>
-        <div className="figure"><b><CountUp end={500} /></b><span>Units · ₹10L each</span></div>
-        <div className="figure"><b><CountUp end={200} suffix="+" /></b><span>Holders, on-chain floor</span></div>
-        <div className="figure"><b><CountUp end={95} suffix="%" /></b><span>Of NDCF distributed</span></div>
-      </div>
+      {/* ── Figures ──────────────────────────────────────── */}
+      <Fade className="mt-16 sm:mt-20" aria-label="Reference scheme at a glance">
+        <dl className="liquid-glass grid grid-cols-2 gap-px overflow-hidden rounded-3xl lg:grid-cols-4">
+          {[
+            { el: <CountUp end={50} prefix="₹" suffix=" Cr" />, label: 'Target corpus' },
+            { el: <CountUp end={500} />, label: 'Units · ₹10L each' },
+            { el: <CountUp end={200} suffix="+" />, label: 'Holders, on-chain floor' },
+            { el: <CountUp end={95} suffix="%" />, label: 'Of NDCF distributed' },
+          ].map((f) => (
+            <div key={f.label} className="bg-white/[0.015] px-6 py-7 text-center">
+              <dd className="font-sans text-3xl font-semibold tracking-tight text-white sm:text-4xl">{f.el}</dd>
+              <dt className="mt-2 text-xs uppercase tracking-[0.16em] text-white/50">{f.label}</dt>
+            </div>
+          ))}
+        </dl>
+      </Fade>
 
-      <Marquee items={TICKER} />
+      {/* ── Ticker ───────────────────────────────────────── */}
+      <Fade className="mt-12" delay={0.05}>
+        <div className="relative overflow-hidden border-y border-white/10 py-4" aria-hidden="true">
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-brand-dark to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-brand-dark to-transparent" />
+          <motion.div
+            className="flex w-max items-center gap-10"
+            animate={{ x: ['0%', '-50%'] }}
+            transition={{ duration: 42, repeat: Infinity, ease: 'linear' }}
+          >
+            {[...TICKER, ...TICKER].map((t, i) => (
+              <span key={i} className="flex items-center gap-10 whitespace-nowrap text-sm uppercase tracking-[0.2em] text-white/40">
+                {t}
+                <span className="h-1 w-1 rounded-full bg-brand-blue/60" />
+              </span>
+            ))}
+          </motion.div>
+        </div>
+      </Fade>
 
-      <div className="how">
-        <div className="how-sticky">
-          <Io>
-            <h2>From first bid<br />to verified payout,<br />in four moves.</h2>
-            <p>Scroll — each step is a state transition on the offer, enforced by the contracts, not by paperwork.</p>
-            <p style={{ marginBottom: 0 }}>
-              <Magnetic>
-                <Link className="btn primary" to="/login">Try it live →</Link>
-              </Magnetic>
+      {/* ── How it works ─────────────────────────────────── */}
+      <div className="mt-20 grid gap-10 sm:mt-24 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <Fade>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-brand-mist">How it works</p>
+            <h2 className="text-gradient mt-3 font-sans text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
+              From first bid
+              <br />
+              to verified payout,
+              <br />
+              in four moves.
+            </h2>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/60 sm:text-base">
+              Scroll — each step is a state transition on the offer, enforced by the contracts, not by paperwork.
             </p>
-          </Io>
+            <p className="mt-6">
+              <Link
+                to="/login"
+                className="group inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:scale-[1.03]"
+              >
+                Try it live
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </p>
+          </Fade>
         </div>
-        <ol className="how-steps">
+        <ol className="space-y-4">
           {STEPS.map((s, i) => (
-            <Io as="li" key={s.n} className="how-step" delay={(i % 4) * 70}>
-              <span className="how-n num" aria-hidden="true">{s.n}</span>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </Io>
+            <Fade key={s.n} delay={(i % 4) * 0.07}>
+              <li className="liquid-glass group rounded-3xl p-6 transition-colors hover:border-white/20 sm:p-7">
+                <span className="font-mono text-sm text-brand-mist" aria-hidden="true">
+                  {s.n}
+                </span>
+                <h3 className="mt-2 font-sans text-xl font-semibold tracking-tight text-white">{s.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-white/60">{s.body}</p>
+              </li>
+            </Fade>
           ))}
         </ol>
       </div>
 
-      <div className="sec-head">
-        <h2>Why the evidence is the product</h2>
-      </div>
-      <Io>
-        <p style={{ marginTop: 12 }}>
-          Neighbouring fractional platforms custody funds and publish only winners. AcreSync is built
-          the other way round: the ledger Entry you can check is the point, and everything else —
-          money flow, identity, custody — stays exactly where regulation puts it.
-        </p>
-      </Io>
-      <SpotField className="why-grid">
-        {WHY.map((w, i) => (
-          <Io key={w.title} delay={(i % 3) * 80}>
-            <Card flat>
-              <div className="spot-card why-card">
-                <h3 style={{ marginTop: 0 }}>{w.title}</h3>
-                <p style={{ marginBottom: 0 }}>{w.body}</p>
-              </div>
-            </Card>
-          </Io>
-        ))}
-      </SpotField>
-
-      <section className="band" aria-label="How distributions work">
-        <Io>
-          <h2>Don’t take our word for it</h2>
-          <p>Every claim on this platform terminates at evidence you can check yourself — one hash function, standard library only.</p>
-        </Io>
-        <Io delay={100}>
-          <ol>
-            <li>Fetch the bytes, hash them with SHA-256, compare against the anchored digest.</li>
-            <li>Rebuild the Merkle root from your bid’s proof path; check the root against the anchor transaction on Sepolia.</li>
-            <li>Losers are published too — a draw you can’t falsify isn’t a draw.</li>
-          </ol>
-        </Io>
-        <Io delay={160}>
-          <div className="ndcf-line">
-            <div><b>Gross rent</b><span>collected on the asset</span></div>
-            <div className="ndcf-arrow" aria-hidden="true">→</div>
-            <div><b>NDCF</b><span>after costs, fees &amp; tax</span></div>
-            <div className="ndcf-arrow" aria-hidden="true">→</div>
-            <div><b>≥ 95% paid out</b><span>enforced in Solidity, every period</span></div>
-          </div>
-        </Io>
-        <Io delay={200}>
-          <p style={{ marginBottom: 0 }}>
-            <StatusPill kind="outbox" status="ANCHORED" label="Live on Sepolia" />{' '}
-            Contracts are source-verified and immutable — no proxy, no upgrade keys. Anchored commitments are checkable by anyone, on-chain.
+      {/* ── Why ──────────────────────────────────────────── */}
+      <div className="mt-20 sm:mt-24">
+        <Fade>
+          <p className="text-xs font-medium uppercase tracking-[0.22em] text-brand-mist">Why AcreSync</p>
+          <h2 className="text-gradient mt-3 font-sans text-4xl font-semibold tracking-tight sm:text-5xl">
+            Why the evidence is the product
+          </h2>
+          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/60 sm:text-base">
+            Neighbouring fractional platforms custody funds and publish only winners. AcreSync is built
+            the other way round: the ledger entry you can check is the point, and everything else —
+            money flow, identity, custody — stays exactly where regulation puts it.
           </p>
-        </Io>
-      </section>
-
-      <div className="sec-head">
-        <h2>Schemes</h2>
-        {schemes.length > 0 && <span className="sub">{schemes.length} live</span>}
-      </div>
-      {loading && <LoadingCard lines={3} label="Loading schemes" />}
-      {error && <ErrorBox error={error} retry={refresh} />}
-      {!loading && !error && schemes.length === 0 && (
-        <div className="placeholder" style={{ marginTop: 16 }}>
-          <h3>No schemes live right now</h3>
-          <p>New schemes appear here as they open. Check back soon — or ask the team at the showcase desk.</p>
+        </Fade>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {WHY.map((w, i) => {
+            const Icon = w.icon;
+            return (
+              <Fade key={w.title} delay={(i % 3) * 0.08}>
+                <Card flat>
+                  <Icon className="h-5 w-5 text-brand-mist" aria-hidden="true" />
+                  <h3 className="mt-4 font-sans text-lg font-semibold tracking-tight text-white">{w.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-white/60">{w.body}</p>
+                </Card>
+              </Fade>
+            );
+          })}
         </div>
-      )}
-      {schemes.length > 0 && (
-        <div className="rows" style={{ marginTop: 4 }}>
+      </div>
+
+      {/* ── Verify band ──────────────────────────────────── */}
+      <Fade className="mt-20 sm:mt-24">
+        <section
+          className="liquid-glass relative overflow-hidden rounded-3xl p-8 sm:p-12"
+          aria-label="How distributions work"
+        >
+          <div
+            className="pointer-events-none absolute -left-24 top-0 h-64 w-64 rounded-full bg-brand-blue/20 blur-[100px]"
+            aria-hidden="true"
+          />
+          <div className="relative">
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-brand-mist">Distributions</p>
+            <h2 className="text-gradient mt-3 font-sans text-3xl font-semibold tracking-tight sm:text-4xl">
+              Don’t take our word for it
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/60 sm:text-base">
+              Every claim on this platform terminates at evidence you can check yourself — one hash function, standard library only.
+            </p>
+            <ol className="mt-6 space-y-3 text-sm leading-relaxed text-white/75">
+              <li className="flex gap-3">
+                <span className="font-mono text-brand-mist">01</span>
+                Fetch the bytes, hash them with SHA-256, compare against the anchored digest.
+              </li>
+              <li className="flex gap-3">
+                <span className="font-mono text-brand-mist">02</span>
+                Rebuild the Merkle root from your bid’s proof path; check the root against the anchor transaction on Sepolia.
+              </li>
+              <li className="flex gap-3">
+                <span className="font-mono text-brand-mist">03</span>
+                Losers are published too — a draw you can’t falsify isn’t a draw.
+              </li>
+            </ol>
+            <div className="mt-8 flex flex-col items-stretch gap-3 text-center sm:flex-row sm:items-center">
+              <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                <p className="font-semibold text-white">Gross rent</p>
+                <p className="mt-1 text-xs text-white/55">collected on the asset</p>
+              </div>
+              <div className="font-mono text-brand-mist" aria-hidden="true">
+                →
+              </div>
+              <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                <p className="font-semibold text-white">NDCF</p>
+                <p className="mt-1 text-xs text-white/55">after costs, fees &amp; tax</p>
+              </div>
+              <div className="font-mono text-brand-mist" aria-hidden="true">
+                →
+              </div>
+              <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                <p className="font-semibold text-white">≥ 95% paid out</p>
+                <p className="mt-1 text-xs text-white/55">enforced in Solidity, every period</p>
+              </div>
+            </div>
+            <p className="mt-6 text-sm leading-relaxed text-white/65">
+              <StatusPill kind="outbox" status="ANCHORED" label="Live on Sepolia" />{' '}
+              <span className="ml-1">
+                Contracts are source-verified and immutable — no proxy, no upgrade keys. Anchored commitments are checkable by anyone, on-chain.
+              </span>
+            </p>
+          </div>
+        </section>
+      </Fade>
+
+      {/* ── Schemes ──────────────────────────────────────── */}
+      <div className="mt-20 sm:mt-24">
+        <Fade>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-gradient font-sans text-4xl font-semibold tracking-tight sm:text-5xl">Schemes</h2>
+            {schemes.length > 0 && (
+              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/60">
+                {schemes.length} live
+              </span>
+            )}
+          </div>
+        </Fade>
+        <div className="mt-6 space-y-4">
+          {loading && <LoadingCard lines={3} label="Loading schemes" />}
+          {error && <ErrorBox error={error} retry={refresh} />}
+          {!loading && !error && schemes.length === 0 && (
+            <Fade>
+              <div className="rounded-3xl border border-dashed border-white/20 bg-white/[0.02] p-10 text-center">
+                <h3 className="font-sans text-xl font-semibold text-white">No schemes live right now</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-white/60">
+                  New schemes appear here as they open. Check back soon — or ask the team at the showcase desk.
+                </p>
+              </div>
+            </Fade>
+          )}
           {schemes.map((s, i) => (
-            <Io key={s.id} delay={Math.min(i, 5) * 60}>
-              <div className="row">
-                <div className="grow">
-                  <h3><Link to={`/schemes/${s.id}`}>{String(s.name ?? s.id)}</Link></h3>
-                  <p>
+            <Fade key={s.id} delay={Math.min(i, 5) * 0.06}>
+              <Link
+                to={`/schemes/${s.id}`}
+                className="liquid-glass group flex items-center gap-5 rounded-3xl p-6 transition-colors hover:border-white/20 sm:px-7"
+              >
+                <div className="min-w-0 grow">
+                  <h3 className="truncate font-sans text-xl font-semibold tracking-tight text-white group-hover:underline group-hover:underline-offset-4">
+                    {String(s.name ?? s.id)}
+                  </h3>
+                  <p className="mt-1.5 text-sm text-white/60">
                     Target {inrShort(s.targetCorpusPaise)} · {s.totalUnits ?? 500} units
-                    {s.environment && <> · <span className="mono">{String(s.environment)}</span></>}
+                    {s.environment && (
+                      <>
+                        {' '}· <span className="font-mono text-xs text-white/55">{String(s.environment)}</span>
+                      </>
+                    )}
                   </p>
                 </div>
-                <span className="meta"><Link to={`/schemes/${s.id}`}>Open scheme →</Link></span>
-              </div>
-            </Io>
+                <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-white/15 px-4 py-2 text-sm text-white/75 transition group-hover:border-white/30 group-hover:text-white sm:inline-flex">
+                  Open scheme
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            </Fade>
           ))}
         </div>
-      )}
+      </div>
     </>
   );
 }

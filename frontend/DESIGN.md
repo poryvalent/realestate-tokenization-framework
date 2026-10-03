@@ -4,31 +4,34 @@
 
 ## World
 
-Exhibition registry: a full-bleed institutional ledger built for a live business-event showcase.
-Paper ground, ink text, one deep-green action accent. Colour does jobs — action, evidence,
-money, danger — never decoration. Display voice is a book serif (Georgia/Iowan stack,
-offline-safe); data speaks in tabular numerals and small-caps labels; mono is reserved for
-hashes, addresses and code.
+Dark cinematic attestation console: a near-black `#020319` void with a deep-indigo
+glow, glass-pill navigation and liquid-glass data cards. Colour does jobs — action
+(`#BEC7FF` mist), evidence (mono hashes, Etherscan links), money (tabular `en-IN`
+rupees), danger (rose) — never decoration. Display voice is Inter Tight
+(400–700, offline fallback to system-ui); data speaks in tabular numerals;
+IBM Plex Mono is reserved for hashes, addresses and code. Giant gradient titles
+(`#A8B4FF → #FFFFFF`) sit behind a grid-and-glow parallax field with film grain.
 
 ## Layout
 
-Fluid full-bleed page: `--gutter: clamp(20px, 5vw, 96px)` is the only margin, capped at
-2000px. Sections own the viewport edge to edge — hero (86svh), ruled figure strip, ink
-marquee ticker, sticky how-it-works, spotlight grid, full-bleed dark attestation band,
-ledger scheme rows. Only single-column forms (bid, sign-in fields) use `.narrow` (680px).
-Breakout sections (marquee, band) use negative gutter margins, never viewport hacks.
+Centered column (`max-w-6xl`) floating over a fixed ambient field (grid + indigo
+glow + grain). Glass pill topbar (fixed, rounded-full, blur 18px) with mobile
+fullscreen overlay menu. Sections stack as liquid-glass cards with 16–24px radii;
+only single-column forms (bid, sign-in fields) use `.narrow` (680px). Footer is a
+thin ruled band with the Sepolia contract link and the risk disclaimer.
 
 ## Type
 
-Hero display `clamp(3rem, 8.5vw, 6rem)` serif, tight; section heads serif with 3px rules;
-body capped at 68–72ch. Figures are oversized tabular serif numerals with tracked
-small-caps labels. Kickers/eyebrows are banned; headings carry their own weight.
+Hero display `clamp(2.5rem, 6vw, 4rem)` Inter Tight semibold, tight; section heads
+semibold with eyebrow kickers in tracked uppercase; body capped at 68–72ch in
+`white/60`. Figures are oversized tabular numerals. Mono (`IBM Plex Mono`) only
+for digests, addresses, Tx hashes and code.
 
 ## Motion
 
-One authored moment per region: kinetic letter-stagger hero, scroll + pointer
-parallax wash (transform-only, rAF), count-up figures, marquee ticker,
-spotlight + 5° tilt cards, magnetic CTAs, difference-blend cursor (fine pointers only),
-film grain, scroll progress rule, brand preloader, Lenis smooth scroll. Everything
-self-disables under `prefers-reduced-motion` and coarse pointers. Tokens live in
-`src/theme/motion.css`; snippets in `transitions.css`.
+One authored moment per region, all Framer Motion: blur-fade rise entrances with
+stagger, count-up figures, infinite marquee ticker, AnimatePresence route fades,
+glass-pill mobile menu with staggered link entrances, accordion height animation,
+scroll progress rule, brand preloader. Everything self-disables under
+`prefers-reduced-motion`. Motion tokens: duration 0.3–0.6s, easing
+`[0.25, 0.1, 0.25, 1]`.
