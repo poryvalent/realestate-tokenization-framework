@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite"
+    },
+    "orchestrator": {
+      "root": "orchestrator",
+      "runtime": "go"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/v1/(.*)",
+      "destination": {
+        "service": "orchestrator"
+      }
+    },
+    {
+      "source": "/healthz",
+      "destination": {
+        "service": "orchestrator"
+      }
+    },
+    {
+      "source": "/readyz",
+      "destination": {
+        "service": "orchestrator"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    }
+  ]
+}

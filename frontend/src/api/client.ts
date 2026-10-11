@@ -7,7 +7,13 @@
  * - Pollable GETs support conditional requests via ETag.
  */
 export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://127.0.0.1:4010';
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? '/v1';
+
+export function buildUrl(base: string, path: string): string {
+  const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+}
 
 export interface ApiEnvelopeError {
   error: { code: string; message: string; requestId?: string };
@@ -58,7 +64,7 @@ export async function apiFetch<T>(path: string, opts: CallOptions = {}): Promise
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(buildUrl(API_BASE, path), {
       method: opts.method ?? 'GET',
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

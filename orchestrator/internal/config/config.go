@@ -173,7 +173,7 @@ func Load(required ...Feature) (*Config, error) {
 
 	c := &Config{
 		Environment: Environment(getEnv("ACRESYNC_ENVIRONMENT", string(EnvLocal))),
-		HTTPAddr:    getEnv("ACRESYNC_HTTP_ADDR", "127.0.0.1:8080"),
+		HTTPAddr:    resolveHTTPAddr(),
 
 		Database: DatabaseConfig{
 			URL: Secret(os.Getenv("ACRESYNC_DATABASE_URL")),
@@ -370,6 +370,16 @@ func requireString(name, v string) []string {
 		return []string{name + " still holds a placeholder value"}
 	}
 	return nil
+}
+
+func resolveHTTPAddr() string {
+	if addr := os.Getenv("ACRESYNC_HTTP_ADDR"); addr != "" {
+		return addr
+	}
+	if port := os.Getenv("PORT"); port != "" {
+		return "0.0.0.0:" + port
+	}
+	return "127.0.0.1:8080"
 }
 
 func getEnv(key, fallback string) string {
