@@ -58,8 +58,8 @@ function Topbar() {
         className={`fixed inset-x-0 top-0 z-[60] transition-all duration-300 ${
           isHome
             ? scrolled
-              ? 'border-b border-white/10 bg-[#050c1f]/90 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.6)] backdrop-blur-xl'
-              : 'border-b border-transparent bg-transparent py-5'
+              ? 'border-b border-white/10 bg-[#050c1f]/90 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.6)] backdrop-blur-xl opacity-100 pointer-events-auto'
+              : 'border-b border-transparent bg-transparent py-5 opacity-0 pointer-events-none'
             : 'border-b border-white/12 bg-[#050c1f]/95 py-3 backdrop-blur-xl'
         }`}
       >

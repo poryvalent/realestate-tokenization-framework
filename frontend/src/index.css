@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter Tight", system-ui, -apple-system, sans-serif;
+  --font-sans: "Geist", "Inter Tight", system-ui, -apple-system, sans-serif;
+  --font-haboro: "Haboro Norm Regular", Georgia, serif;
+  --font-geist: "Geist", system-ui, -apple-system, sans-serif;
   --font-serif: "Playfair Display", Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-ink: #030712;
 
   /* Classic Institutional Pure Navy & White Palette */
   --color-brand-blue: #2563eb;       /* Royal Blue */
@@ -172,3 +175,45 @@ input, select, textarea {
     scroll-behavior: auto;
   }
 }
+
+/* Custom Menu Keyframes and Animations */
+@keyframes menuSlideUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.95); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+@keyframes menuSlideDown {
+  from { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.95); }
+}
+
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+@keyframes menuItemSlide {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.menu-open          { animation: menuSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.menu-close         { animation: menuSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.menu-overlay-open  { animation: fadeIn 0.3s ease forwards; }
+.menu-overlay-close { animation: fadeOut 0.3s ease forwards; }
+.menu-item-enter    { animation: menuItemSlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.font-haboro {
+  font-family: 'Haboro Norm Regular', Georgia, serif;
+}
+
+.font-geist {
+  font-family: 'Geist', sans-serif;
+}
+
+.bg-ink {
+  background-color: #030712;
+}
+
+.text-ink {
+  color: #030712;
+}
+
