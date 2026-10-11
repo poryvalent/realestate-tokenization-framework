@@ -16,11 +16,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/acresync/orchestrator/internal/asba"
+	"github.com/acresync/orchestrator/internal/chain"
 	"github.com/acresync/orchestrator/internal/clock"
 	"github.com/acresync/orchestrator/internal/config"
 	"github.com/acresync/orchestrator/internal/db"
 	"github.com/acresync/orchestrator/internal/httpapi"
+	"github.com/acresync/orchestrator/internal/ipfs"
 	"github.com/acresync/orchestrator/internal/store"
+	"github.com/acresync/orchestrator/internal/uploads"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -182,3 +187,68 @@ func upstreamVerifier(cfg *config.Config) (httpapi.IDTokenVerifier, error) {
 		},
 	}, nil
 }
+
+// writeDeps attaches what the mutations need.
+func writeDeps(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, deps *httpapi.Deps) (func(), error) {
+	closers := []func(){}
+	closeAll := func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			closers[i]()
+		}
+	}
+
+	clocks := clock.NewPostgresStore(pool)
+	deps.DB = pool
+	deps.BusinessClock = func(schemeID string) clock.Business { return clock.For(clocks, schemeID) }
+	deps.ASBA = asba.NewSandbox(clock.Real())
+
+	provider, err := ipfs.NewProvider(cfg.IPFS, getEnvDefault("ACRESYNC_IPFS_MOCK_DIR", "var/ipfs"))
+	if err != nil {
+		return closeAll, fmt.Errorf("building the IPFS provider: %w", err)
+	}
+	deps.Publisher = ipfs.NewPublisher(provider)
+
+	store, err := uploads.NewDir(getEnvDefault("ACRESYNC_UPLOAD_DIR", "var/uploads"))
+	if err != nil {
+		return closeAll, err
+	}
+	deps.Uploads = store
+	deps.UploadBaseURL = getEnvDefault("ACRESYNC_PUBLIC_BASE_URL", "http://"+cfg.HTTPAddr)
+
+	if cfg.Environment == config.EnvLocal && !cfg.Anchor.DevPepper.IsZero() {
+		deps.SeedPepper = []byte(cfg.Anchor.DevPepper.Reveal())
+	} else {
+		slog.Warn("no ballot seed pepper is available, so the ceremony and settlement endpoints are not served",
+			"hint", "LOCAL uses ACRESYNC_ANCHOR_PEPPER_DEV; other environments need a KMS, which is not integrated")
+	}
+
+	simulated := os.Getenv("ACRESYNC_CHAIN_SIMULATED") == "true"
+	switch {
+	case simulated && cfg.Environment != config.EnvLocal:
+		return closeAll, fmt.Errorf("ACRESYNC_CHAIN_SIMULATED is for LOCAL only; %s must read a real chain", cfg.Environment)
+	case simulated:
+		deps.Chain = chain.Simulated{}
+		slog.Warn("the chain is SIMULATED: block hashes are predictable, so a ballot drawn here proves nothing about fairness")
+	case !cfg.Chain.RPCURL.IsZero():
+		reader, err := chain.DialReader(ctx, cfg.Chain)
+		if err != nil {
+			return closeAll, err
+		}
+		closers = append(closers, reader.Close)
+		deps.Chain = reader
+	default:
+		slog.Warn("no chain RPC is configured, so revealSeed and recommitSeed are not served",
+			"hint", "set ACRESYNC_CHAIN_RPC_URL, or ACRESYNC_CHAIN_SIMULATED=true in LOCAL")
+	}
+
+	slog.Warn("funds blocks use the in-memory ASBA sandbox; a restart forgets them, and no real bank is involved")
+	return closeAll, nil
+}
+
+func getEnvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+

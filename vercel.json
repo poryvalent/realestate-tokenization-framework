@@ -7,7 +7,8 @@
     },
     "orchestrator": {
       "root": "orchestrator",
-      "runtime": "go"
+      "runtime": "go",
+      "entrypoint": "cmd/api/main.go"
     }
   },
   "rewrites": [
