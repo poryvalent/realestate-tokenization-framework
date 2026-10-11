@@ -33,9 +33,9 @@ export default function Allotments() {
           >
             Allotments
           </motion.h1>
-          <div className="mt-6 rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-8 text-center">
-            <h3 className="text-lg font-semibold text-white">Allotments publish after the draw</h3>
-            <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-white/60">
+          <div className="mt-6 rounded-none border border-dashed border-white/20 bg-[#050c1f]/40 p-8 text-center">
+            <h3 className="text-lg font-semibold text-white uppercase tracking-wider">Allotments publish after the draw</h3>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-slate-300">
               Every bid's outcome — winners and losers alike. Publishing only winners would make the draw
               unfalsifiable for exactly the people with the strongest reason to check it.
             </p>

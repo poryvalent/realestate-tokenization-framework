@@ -64,7 +64,7 @@ export default function ProofBid() {
               <label htmlFor="bidref" className="sr-only">Bid reference</label>
               <input
                 id="bidref"
-                className="w-full rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2.5 font-mono text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:ring-2 focus:ring-brand-blue/20"
+                className="w-full rounded-none border border-white/15 bg-white/[0.04] px-4 py-2.5 font-mono text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:ring-1 focus:ring-brand-blue/30"
                 value={bidRef}
                 onChange={(e) => setBidRef(e.target.value)}
                 placeholder="e.g. BID-…"
@@ -74,7 +74,7 @@ export default function ProofBid() {
             <button
               type="submit"
               disabled={loading || !bidRef.trim()}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[#020319] transition hover:bg-white/85 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-none bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-white/85 disabled:opacity-50"
             >
               <SearchCheck className="h-4 w-4" />
               {loading ? 'Checking…' : 'Check inclusion'}
@@ -85,7 +85,17 @@ export default function ProofBid() {
 
       {error && (
         <div className="mt-5">
-          <ErrorBox error={error} />
+          {error.status === 404 ? (
+            <div className="rounded-none border border-white/20 bg-[#07132e]/90 p-6 text-center">
+              <p className="text-xs font-mono uppercase tracking-[0.2em] text-slate-400">Public Diligence Rail</p>
+              <h3 className="mt-2 text-base font-semibold text-white">Bid proof publishes at offer freeze</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-300 max-w-lg mx-auto">
+                Individual Merkle inclusion proofs are published once bidding closes, the bid book is frozen, and the Merkle root is anchored on Sepolia. While an offer is still accepting bids or awaiting root anchoring, receipts remain in the ASBA register.
+              </p>
+            </div>
+          ) : (
+            <ErrorBox error={error} />
+          )}
         </div>
       )}
       {proof && (
@@ -108,7 +118,7 @@ export default function ProofBid() {
             <h3 className="mt-6 text-sm font-semibold uppercase tracking-[0.15em] text-white/50">Proof path</h3>
             <ol className="mt-2 space-y-1.5 font-mono text-[13px] text-white/75" style={{ overflowWrap: 'anywhere' }}>
               {(proof.proof ?? []).map((p, i) => (
-                <li key={i} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5">
+                <li key={i} className="rounded-none border border-white/10 bg-white/[0.03] px-3 py-1.5">
                   <span className="mr-2 text-white/35">{String(i).padStart(2, '0')}</span>{String(p)}
                 </li>
               ))}
@@ -118,7 +128,7 @@ export default function ProofBid() {
                 <h3 className="mt-6 text-sm font-semibold uppercase tracking-[0.15em] text-white/50">
                   Preimage (rebuild the leaf from this)
                 </h3>
-                <pre className="mt-2 overflow-x-auto rounded-xl border border-white/10 bg-black/40 p-4 font-mono text-xs leading-relaxed text-white/75">
+                <pre className="mt-2 overflow-x-auto rounded-none border border-white/10 bg-black/40 p-4 font-mono text-xs leading-relaxed text-white/75">
                   {JSON.stringify(proof.preimage, null, 2)}
                 </pre>
               </>

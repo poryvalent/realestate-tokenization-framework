@@ -42,7 +42,7 @@ export default function Portfolio() {
             action={
               <Link
                 to="/login"
-                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-mist"
+                className="rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
               >
                 Sign in
               </Link>
@@ -134,7 +134,7 @@ export default function Portfolio() {
                   </dl>
                   {e.payable === false && (
                     <div
-                      className="mt-4 flex items-start gap-3 rounded-xl border border-sky-300/30 bg-sky-300/10 p-4 text-sm text-sky-100"
+                      className="mt-4 flex items-start gap-3 rounded-none border border-blue-400/30 bg-blue-500/10 p-4 text-sm text-blue-100"
                       role="note"
                     >
                       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -153,10 +153,10 @@ export default function Portfolio() {
       {tab === 'payouts' && (
         <>
           <div
-            className="mb-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/70"
+            className="mb-4 flex items-start gap-3 rounded-none border border-white/10 bg-[#050c1f]/80 p-5 text-sm text-slate-300"
             role="note"
           >
-            <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-brand-blue" />
+            <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-white" />
             <p className="mb-0">
               Money moves over regulated bank rails — payouts are instructed to your verified account, never held by
               the platform. And <strong className="font-semibold text-white">SETTLED is not final</strong>: a bank can

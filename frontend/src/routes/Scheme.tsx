@@ -126,7 +126,7 @@ export default function Scheme() {
             <Layers className="h-5 w-5 text-brand-mist" aria-hidden="true" />
             <h2 className="font-sans text-2xl font-semibold tracking-tight text-white sm:text-3xl">Offers</h2>
             {offerList.length > 0 && (
-              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/60">
+              <span className="rounded-none border border-white/20 bg-white/5 px-2.5 py-0.5 text-xs font-mono uppercase tracking-wider text-slate-300">
                 {offerList.length}
               </span>
             )}
@@ -142,7 +142,7 @@ export default function Scheme() {
             <Fade key={o.id} delay={Math.min(i, 5) * 0.06}>
               <Link
                 to={`/offers/${o.id}`}
-                className="liquid-glass group block rounded-3xl p-6 transition-colors hover:border-white/20 sm:p-7"
+                className="rounded-none border border-white/10 bg-[#07132e]/85 group block p-6 transition-colors hover:border-white/30 sm:p-7 shadow-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="font-sans text-xl font-semibold tracking-tight text-white group-hover:underline group-hover:underline-offset-4">
@@ -181,7 +181,7 @@ export default function Scheme() {
               Distribution periods
             </h2>
             {periodList.length > 0 && (
-              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/60">
+              <span className="rounded-none border border-white/20 bg-white/5 px-2.5 py-0.5 text-xs font-mono uppercase tracking-wider text-slate-300">
                 {periodList.length}
               </span>
             )}
@@ -197,7 +197,7 @@ export default function Scheme() {
             <Fade key={p.id} delay={Math.min(i, 5) * 0.06}>
               <Link
                 to={`/periods/${p.id}`}
-                className="liquid-glass group flex flex-wrap items-center justify-between gap-3 rounded-3xl p-6 transition-colors hover:border-white/20"
+                className="group flex flex-wrap items-center justify-between gap-3 rounded-none border border-white/10 bg-[#07132e]/85 p-6 transition-colors hover:border-white/30 shadow-sm"
               >
                 <h3 className="font-sans text-lg font-semibold tracking-tight text-white group-hover:underline group-hover:underline-offset-4">
                   Period {String(p.id).slice(0, 8)}

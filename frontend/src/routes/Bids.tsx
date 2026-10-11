@@ -37,7 +37,7 @@ export default function Bids() {
             action={
               <Link
                 to="/login"
-                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-[#020319] transition hover:bg-white/85"
+                className="rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
               >
                 Sign in
               </Link>
@@ -79,7 +79,7 @@ export default function Bids() {
             action={
               <Link
                 to="/"
-                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-[#020319] transition hover:bg-white/85"
+                className="rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
               >
                 Browse offers
               </Link>

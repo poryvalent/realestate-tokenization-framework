@@ -10,15 +10,15 @@ function Step({ done, title, body }: { done: boolean; title: string; body?: Reac
     <li className="flex list-none gap-3 border-b border-white/10 py-3.5 last:border-0">
       <span
         aria-hidden="true"
-        className={`mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full text-xs font-bold ${
-          done ? 'bg-white text-[#020319]' : 'border border-white/20 bg-white/5 text-white/40'
+        className={`mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-none text-xs font-bold ${
+          done ? 'bg-white text-[#040916]' : 'border border-white/20 bg-white/5 text-white/40'
         }`}
       >
         {done ? <Check className="h-3.5 w-3.5" /> : '·'}
       </span>
       <div>
         <strong className="text-sm font-semibold text-white">{title}</strong>
-        {body && <div className="mt-1 text-sm text-white/60">{body}</div>}
+        {body && <div className="mt-1 text-sm text-slate-300">{body}</div>}
       </div>
     </li>
   );
@@ -35,7 +35,7 @@ export default function Ballot() {
         <div className="mx-auto max-w-3xl">
           <Link
             to={`/offers/${id}`}
-            className="inline-flex items-center gap-1.5 text-sm text-brand-mist hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white hover:underline"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Offer
           </Link>
@@ -43,11 +43,11 @@ export default function Ballot() {
             initial={{ opacity: 0, y: 24, filter: 'blur(6px)' }}
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
             transition={{ duration: 0.6, ease: [0.25, 0.1, 0.25, 1] }}
-            className="text-gradient mt-3 text-4xl font-semibold tracking-tight sm:text-5xl"
+            className="text-gradient mt-3 text-4xl font-semibold tracking-tight sm:text-5xl uppercase"
           >
             Ballot ceremony
           </motion.h1>
-          <div className="mt-6 rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-8 text-center">
+          <div className="mt-6 rounded-none border border-dashed border-white/20 bg-[#050c1f]/40 p-8 text-center">
             <h3 className="text-lg font-semibold text-white">Ceremony publishes at book freeze</h3>
             <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-white/60">
               The bid-book root is anchored first, then the seed commitment, then the draw — each step

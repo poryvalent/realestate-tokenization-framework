@@ -93,7 +93,7 @@ export default function Offer() {
       {!acceptsBids && LATE_STATES.has(o.status) && o.status !== 'OPEN' && (
         <Fade delay={0.05} className="mt-6">
           <div
-            className="rounded-2xl border border-sky-300/25 bg-sky-300/[0.08] p-5 text-sm leading-relaxed text-sky-100/90"
+            className="rounded-none border border-blue-400/25 bg-blue-500/10 p-5 text-sm leading-relaxed text-blue-100"
             role="note"
           >
             This offer is {offerStatusLabel(o.status).toLowerCase()} and no longer accepts bids. The ballot and allotment below show exactly what happened.
@@ -173,7 +173,7 @@ export default function Offer() {
               signedIn ? (
                 <Link
                   to={`/offers/${o.id}/bid`}
-                  className="group inline-flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-black transition hover:scale-[1.03]"
+                  className="group inline-flex items-center gap-2 rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-md"
                 >
                   Place a bid
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -221,7 +221,7 @@ export default function Offer() {
                 <Link
                   key={v.to}
                   to={v.to}
-                  className="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition hover:border-white/25 hover:bg-white/[0.05]"
+                  className="group rounded-none border border-white/10 bg-[#07132e]/60 p-5 transition hover:border-white/30 hover:bg-[#07132e]/90 shadow-sm"
                 >
                   <Icon className="h-5 w-5 text-brand-mist" aria-hidden="true" />
                   <p className="mt-3 font-semibold text-white">

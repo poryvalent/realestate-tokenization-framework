@@ -11,7 +11,7 @@ import { Card, LoadingCard, ErrorBox, Empty } from '../components/ui';
 import { useToast } from '../components/Toast';
 
 const inputCls =
-  'w-full rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:bg-white/[0.06] focus:ring-2 focus:ring-brand-blue/20 tabular-nums';
+  'w-full rounded-none border border-white/15 bg-[#030816] px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-white focus:bg-[#050c1f] focus:ring-1 focus:ring-white tabular-nums';
 
 export default function PlaceBid() {
   const { id } = useParams();
@@ -60,7 +60,7 @@ export default function PlaceBid() {
             action={
               <Link
                 to="/login"
-                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-[#020319] transition hover:bg-white/85"
+                className="rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
               >
                 Sign in
               </Link>
@@ -79,7 +79,7 @@ export default function PlaceBid() {
       <div className="mx-auto max-w-2xl">
         <Link
           to={`/offers/${id}`}
-          className="inline-flex items-center gap-1.5 text-sm text-brand-mist hover:underline"
+          className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white hover:underline"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back to offer
         </Link>
@@ -87,11 +87,11 @@ export default function PlaceBid() {
           initial={{ opacity: 0, y: 24, filter: 'blur(6px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ duration: 0.6, ease: [0.25, 0.1, 0.25, 1] }}
-          className="text-gradient mt-3 text-4xl font-semibold tracking-tight"
+          className="text-gradient mt-3 text-4xl font-semibold tracking-tight uppercase"
         >
           Place a bid
         </motion.h1>
-        <div className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5 text-sm text-amber-100">
+        <div className="mt-6 rounded-none border border-amber-300/30 bg-amber-300/10 p-5 text-sm text-amber-100">
           This offer is no longer open and does not accept bids.
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function PlaceBid() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.18 }}
-        className="mt-6 flex items-start gap-3 rounded-2xl border border-sky-300/20 bg-sky-300/[0.07] p-4 text-sm text-white/70"
+        className="mt-6 flex items-start gap-3 rounded-none border border-white/15 bg-[#07132e]/90 p-4 text-sm text-slate-300"
       >
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-200" />
         <p className="leading-relaxed">
@@ -242,21 +242,21 @@ export default function PlaceBid() {
                 <p className="mt-1.5 text-xs text-rose-200">Pick the bank account to block from.</p>
               )}
             </div>
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-              <Wallet className="h-4 w-4 shrink-0 text-brand-mist" />
-              <p className="text-sm text-white/70">
+            <div className="flex items-center gap-3 rounded-none border border-white/10 bg-[#050c1f]/80 px-4 py-3">
+              <Wallet className="h-4 w-4 shrink-0 text-white" />
+              <p className="text-sm text-slate-300">
                 Total to block:{' '}
                 <strong className="tabular-nums font-semibold text-white">
                   {Number.isFinite(totalPaise) ? inr(totalPaise) : '—'}
                 </strong>
-                <span className="text-white/50">, all or nothing — insufficient funds fail the whole block, never a part of it.</span>
+                <span className="text-slate-400">, all or nothing — insufficient funds fail the whole block, never a part of it.</span>
               </p>
             </div>
             {error && <ErrorBox error={error} />}
             <button
               type="submit"
               disabled={submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[#020319] transition hover:bg-white/85 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-none bg-white px-5 py-3 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-md disabled:opacity-50 cursor-pointer"
             >
               <Landmark className="h-4 w-4" />
               {submitting ? 'Placing…' : 'Block funds and place bid'}

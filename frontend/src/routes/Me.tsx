@@ -30,7 +30,7 @@ export default function MeView() {
             action={
               <Link
                 to="/login"
-                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-mist"
+                className="rounded-none bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
               >
                 Sign in
               </Link>
@@ -112,19 +112,27 @@ export default function MeView() {
             <h3 className="mb-2 mt-0 flex items-center gap-2 text-sm font-semibold text-white">
               <Fingerprint className="h-4 w-4 text-white/50" /> Demat
             </h3>
-            {(m.dematAccounts ?? []).length === 0 && <p className="text-sm text-white/50">No demat accounts on file.</p>}
+            {(m.dematAccounts ?? []).length === 0 && <p className="text-sm text-slate-400">No demat accounts on file.</p>}
             {(m.dematAccounts ?? []).map((d) => (
-              <p key={d.id} className="text-sm text-white/75">
+              <p key={d.id} className="text-sm text-slate-300">
                 {d.depository} · <span className="font-mono">{d.maskedClientId}</span> ·{' '}
-                {d.verified ? 'verified' : 'unverified'}
+                <span className={d.verified ? 'text-emerald-400 font-mono text-xs uppercase' : 'text-slate-400 font-mono text-xs uppercase'}>
+                  {d.verified ? 'verified' : 'unverified'}
+                </span>
               </p>
             ))}
             <h3 className="mb-2 mt-5 text-sm font-semibold text-white">Bank</h3>
-            {(m.bankAccounts ?? []).length === 0 && <p className="text-sm text-white/50">No bank accounts on file.</p>}
+            {(m.bankAccounts ?? []).length === 0 && <p className="text-sm text-slate-400">No bank accounts on file.</p>}
             {(m.bankAccounts ?? []).map((b) => (
-              <p key={b.id} className="text-sm text-white/75">
-                <span className="font-mono">{b.ifsc}</span> · <span className="font-mono">{b.maskedAccountNumber}</span>{' '}
-                · {b.verified ? 'verified' : 'unverified'}
+              <p key={b.id} className="text-sm text-slate-300">
+                <span className="font-mono">{b.ifsc}</span>
+                {b.maskedAccountNumber && (
+                  <> · <span className="font-mono">{b.maskedAccountNumber}</span></>
+                )}{' '}
+                ·{' '}
+                <span className={b.verified ? 'text-emerald-400 font-mono text-xs uppercase' : 'text-slate-400 font-mono text-xs uppercase'}>
+                  {b.verified ? 'verified' : 'unverified'}
+                </span>
               </p>
             ))}
           </Card>
@@ -134,13 +142,13 @@ export default function MeView() {
         <p className="flex flex-wrap gap-3">
           <Link
             to="/portfolio"
-            className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-mist"
+            className="inline-flex items-center gap-2 rounded-none bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm"
           >
             Portfolio <ArrowRight className="h-4 w-4" />
           </Link>
           <Link
             to="/bids"
-            className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-none border border-white/25 bg-[#050c1f] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10"
           >
             My bids <ArrowRight className="h-4 w-4" />
           </Link>

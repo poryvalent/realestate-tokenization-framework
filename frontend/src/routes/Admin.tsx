@@ -24,13 +24,13 @@ import { Io } from '../components/motion';
 const LS_OFFER = 'acresync.adminOffer';
 
 const inputCls =
-  'w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:bg-white/[0.07]';
+  'w-full rounded-none border border-white/15 bg-[#030816] px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-white focus:bg-[#050c1f]';
 const btnPrimary =
-  'inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-mist disabled:opacity-50';
+  'inline-flex items-center justify-center gap-2 rounded-none bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-slate-200 shadow-sm disabled:opacity-50 cursor-pointer';
 const btnGhost =
-  'inline-flex items-center justify-center gap-2 rounded-full border border-white/20 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-50';
+  'inline-flex items-center justify-center gap-2 rounded-none border border-white/25 bg-[#050c1f] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10 disabled:opacity-50 cursor-pointer';
 const btnDanger =
-  'inline-flex items-center justify-center gap-2 rounded-full bg-rose-400 px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-rose-300 disabled:opacity-50';
+  'inline-flex items-center justify-center gap-2 rounded-none bg-rose-500 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-rose-600 disabled:opacity-50 cursor-pointer';
 
 function useAdminAuth() {
   return useSession();
@@ -287,14 +287,14 @@ function SettlementPanel({ offerId }: { offerId: string }) {
           <dd className="font-mono text-sm text-white/80">{d.nextStep ?? 'waiting for confirmations'}</dd>
         </dl>
         <div
-          className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10"
+          className="mt-4 h-2.5 overflow-hidden rounded-none bg-white/10"
           role="progressbar"
           aria-valuenow={Math.round(pct)}
           aria-valuemin={0}
           aria-valuemax={100}
         >
           <motion.i
-            className="block h-full w-full origin-left rounded-full bg-gradient-to-r from-brand-blue to-brand-mist"
+            className="block h-full w-full origin-left rounded-none bg-white"
             animate={{ scaleX: pct / 100 }}
             transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           />
@@ -597,7 +597,7 @@ function CreateOffer({ defaultSchemeId, onCreated }: { defaultSchemeId?: string;
 
 export default function Admin() {
   const { offerId: routeOfferId } = useParams();
-  const { mockRole, signedIn } = useSession();
+  const { mockRole, signedIn, isInvestor, investorLabel } = useSession();
   const [offerId, setOfferId] = useState(() => routeOfferId ?? localStorage.getItem(LS_OFFER) ?? '');
   const [draft, setDraft] = useState(() => routeOfferId ?? localStorage.getItem(LS_OFFER) ?? '');
   const offer = usePoll<Offer>(offerId ? `/offers/${offerId}` : null, {});
@@ -616,11 +616,11 @@ export default function Admin() {
         />
         <div className="mt-8">
           <Empty
-            title="Sign in first"
-            body="Operators act with a MANAGER, TRUSTEE or COMPLIANCE persona."
+            title="Operator Sign-in Required"
+            body="The operator console is restricted to institutional Investment Managers, Trustees, and Compliance officers."
             action={
               <Link to="/login" className={btnPrimary}>
-                Sign in
+                Sign in as Operator
               </Link>
             }
           />
@@ -628,33 +628,31 @@ export default function Admin() {
       </>
     );
   }
-  if (!mockRole) {
+  if (isInvestor || !mockRole) {
     return (
-      <>
-        <Reveal
-          title={
-            <>
-              Operator console<span className="text-brand-blue">.</span>
-            </>
-          }
-        />
-        <div
-          className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5 text-sm text-amber-100"
-          role="note"
-        >
-          <Ban className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="mb-0">
-            <strong className="font-semibold text-white">Awaiting persona.</strong> This console needs a MANAGER,
-            TRUSTEE or COMPLIANCE persona — pick one on the sign-in screen. Separation of duties is legible here:
-            trustee approval is a second party signing, never "you lack permission".
+      <div className="mx-auto max-w-2xl py-8">
+        <div className="rounded-none border border-white/15 bg-[#07132e]/90 p-8 shadow-2xl">
+          <div className="flex h-12 w-12 items-center justify-center bg-white/10 text-white mb-5">
+            <Ban className="h-6 w-6 text-rose-400" />
+          </div>
+          <h2 className="text-2xl font-bold uppercase tracking-wider text-white">Operator Console Restricted</h2>
+          <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+            You are signed in as an <strong className="text-white">Investor</strong>{investorLabel ? ` (${investorLabel})` : ''}.
+            The operator console is reserved for institutional managers, trustees, and compliance registrars to manage schemes, transition offers, and run allotment ceremonies.
           </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link to="/" className={btnPrimary}>
+              Back to Schemes
+            </Link>
+            <Link to="/portfolio" className={btnGhost}>
+              My Portfolio
+            </Link>
+            <Link to="/login" className={btnGhost}>
+              Switch to Operator
+            </Link>
+          </div>
         </div>
-        <p className="mt-4">
-          <Link to="/login" className={btnPrimary}>
-            Choose persona →
-          </Link>
-        </p>
-      </>
+      </div>
     );
   }
 

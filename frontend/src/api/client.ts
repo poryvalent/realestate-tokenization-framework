@@ -56,11 +56,16 @@ export async function apiFetch<T>(path: string, opts: CallOptions = {}): Promise
   }
   if (opts.etag) headers['If-None-Match'] = opts.etag;
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: opts.method ?? 'GET',
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: opts.method ?? 'GET',
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch (err) {
+    throw new ApiError(0, 'network_error', err instanceof Error ? err.message : 'Network request failed');
+  }
 
   if (res.status === 304) {
     return { data: undefined as T, etag: opts.etag ?? null, replayed: false, status: 304 };

@@ -10,7 +10,7 @@ import { Card, LoadingCard, ErrorBox, Empty, StatusPill, Hash, Reveal } from '..
 import { Io } from '../components/motion';
 
 const inputCls =
-  'w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 font-mono text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:bg-white/[0.07]';
+  'w-full rounded-none border border-white/15 bg-white/5 px-4 py-2.5 font-mono text-sm text-white placeholder:text-white/30 outline-none transition focus:border-brand-blue/60 focus:bg-white/[0.07]';
 
 export default function PeriodView() {
   const { id } = useParams();
@@ -105,7 +105,7 @@ export default function PeriodView() {
         {ndcf.loading && <LoadingCard lines={3} label="Loading NDCF" />}
         {ndcf.error &&
           (ndcf.error.status === 404 ? (
-            <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-8 text-center">
+            <div className="rounded-none border border-dashed border-white/20 bg-white/[0.02] p-8 text-center">
               <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
                 Publishes on the distribution timetable
               </p>
@@ -189,7 +189,7 @@ export default function PeriodView() {
             </div>
             <button
               type="submit"
-              className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-mist disabled:opacity-50"
+              className="rounded-none bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#040916] transition hover:bg-white/90 disabled:opacity-50"
               disabled={proofLoading || !wallet.trim()}
             >
               {proofLoading ? 'Checking…' : 'Check entitlement'}
