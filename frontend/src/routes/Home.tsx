@@ -90,13 +90,15 @@ export default function Home() {
         {/* 2A. Looping Background Video */}
         <div className="absolute inset-0 z-0">
           <video
-            src="https://d3u0tzju9qaucj.cloudfront.net/fe1f1a5c-425f-4f81-b26b-c5ba3efab5ec/384db88a-5918-410b-bd25-da17893a1e87.mp4"
             autoPlay
             muted
             loop
             playsInline
             className="w-full h-full object-cover"
-          />
+          >
+            <source src="/videos/hero.mp4" type="video/mp4" />
+            <source src="https://d3u0tzju9qaucj.cloudfront.net/fe1f1a5c-425f-4f81-b26b-c5ba3efab5ec/384db88a-5918-410b-bd25-da17893a1e87.mp4" type="video/mp4" />
+          </video>
           {/* Legibility Gradient */}
           <div className="absolute inset-0 bg-gradient-to-b from-ink/70 via-ink/20 to-ink/80" />
         </div>

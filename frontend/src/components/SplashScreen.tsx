@@ -33,13 +33,15 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
     >
       <video
         ref={videoRef}
-        src="https://d3u0tzju9qaucj.cloudfront.net/fe1f1a5c-425f-4f81-b26b-c5ba3efab5ec/5c6c1751-084c-433c-bfd8-8a806cc9dddc.mp4"
         autoPlay
         muted
         playsInline
         onEnded={handleFinish}
         className="absolute top-[20%] left-[30%] -translate-x-1/2 md:left-[55%] w-[320px] sm:w-[390px] md:w-[750px] aspect-video object-contain"
-      />
+      >
+        <source src="/videos/splash.mp4" type="video/mp4" />
+        <source src="https://d3u0tzju9qaucj.cloudfront.net/fe1f1a5c-425f-4f81-b26b-c5ba3efab5ec/5c6c1751-084c-433c-bfd8-8a806cc9dddc.mp4" type="video/mp4" />
+      </video>
 
       {/* Skip button top-right */}
       <button
