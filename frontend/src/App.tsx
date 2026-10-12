@@ -187,19 +187,22 @@ function Topbar() {
 
 export default function App() {
   const loc = useLocation()
+  // "/" is the self-contained landing page: it ships its own splash, header and console menu,
+  // so the generic app chrome is only mounted on the product routes.
+  const isLanding = loc.pathname === '/'
   return (
     <div className="min-h-screen bg-[#030712] text-white">
-      <Preloader />
-      <ScrollProgress />
-      <Grain />
+      {!isLanding && <Preloader />}
+      {!isLanding && <ScrollProgress />}
+      {!isLanding && <Grain />}
       {/* Ambient background - Pure Navy Blue & Crisp Grid */}
       <div className="pointer-events-none fixed inset-0" aria-hidden="true">
         <div className="hero-grid absolute inset-0" />
         <div className="absolute -top-40 left-1/2 h-[500px] w-[860px] -translate-x-1/2 bg-[#1e3a8a]/20 blur-[150px]" />
         <div className="absolute bottom-0 right-0 h-[350px] w-[450px] bg-[#1d4ed8]/15 blur-[130px]" />
       </div>
-      <Topbar />
-      <main className={`relative z-10 w-full ${loc.pathname === '/' ? 'pb-0 pt-0' : 'mx-auto max-w-6xl px-5 pb-24 pt-24 sm:px-8 md:pt-28'}`}>
+      {!isLanding && <Topbar />}
+      <main className={`relative z-10 w-full ${isLanding ? 'pb-0 pt-0' : 'mx-auto max-w-6xl px-5 pb-24 pt-24 sm:px-8 md:pt-28'}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={loc.pathname}
@@ -229,7 +232,7 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
       </main>
-      {loc.pathname !== '/' && (
+      {!isLanding && (
         <footer className="relative z-10 border-t border-white/10 bg-[#050c1f]">
           <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-8 text-xs text-slate-400 sm:px-8 md:flex-row md:items-center md:gap-6">
             <span className="font-semibold text-white">AcreSync — the chain attests, never custodies.</span>

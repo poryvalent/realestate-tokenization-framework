@@ -1,9 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Geist", "Inter Tight", system-ui, -apple-system, sans-serif;
-  --font-haboro: "Haboro Norm Regular", Georgia, serif;
-  --font-geist: "Geist", system-ui, -apple-system, sans-serif;
+  --font-sans: "Jost", "Inter Tight", system-ui, -apple-system, sans-serif;
+  /* Landing typography: a classic Garamond display face over a geometric grotesque. */
+  --font-display: "Cormorant Garamond", "Times New Roman", Georgia, serif;
+  --font-ui: "Jost", system-ui, -apple-system, sans-serif;
   --font-serif: "Playfair Display", Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --color-ink: #030712;
@@ -201,14 +202,6 @@ input, select, textarea {
 .menu-overlay-close { animation: fadeOut 0.3s ease forwards; }
 .menu-item-enter    { animation: menuItemSlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-.font-haboro {
-  font-family: 'Haboro Norm Regular', Georgia, serif;
-}
-
-.font-geist {
-  font-family: 'Geist', sans-serif;
-}
-
 .bg-ink {
   background-color: #030712;
 }
@@ -217,3 +210,83 @@ input, select, textarea {
   color: #030712;
 }
 
+
+/* Lenis smooth scrolling (landing page) */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Hero entrance choreography: elements carry data-enter and the section flips from
+   .hero-pending to .hero-ready once the splash has finished. */
+@keyframes heroRise {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes heroDrop {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes heroFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.hero-pending [data-enter] { opacity: 0; }
+.hero-ready [data-enter='rise'] { animation: heroRise 1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.hero-ready [data-enter='drop'] { animation: heroDrop 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.hero-ready [data-enter='fade'] { animation: heroFade 1.4s ease both; }
+
+/* Hairline underline that draws in under nav links */
+.nav-link { position: relative; }
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nav-link:hover::after { transform: scaleX(1); }
+
+/* Scroll cue: an amber segment travelling along a hairline */
+.scroll-cue {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.scroll-cue::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 100%;
+  background: #f59e0b;
+  animation: cueSlide 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes cueSlide {
+  from { transform: translateX(-16px); }
+  to   { transform: translateX(48px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-pending [data-enter],
+  .hero-ready [data-enter] { opacity: 1; animation: none; }
+  .scroll-cue::after { animation: none; }
+}
